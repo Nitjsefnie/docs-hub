@@ -500,18 +500,12 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 0; }
   flex: 1;
   background: var(--elev-2);
   border-top: 1px solid var(--border);
-  padding: 22px;
   display: flex;
-  justify-content: center;
 }
 .artifact-frame iframe {
-  width: 100%;
-  max-width: 920px;
-  height: 80vh;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  flex: 1;
+  border: 0;
   background: #fff;
-  box-shadow: 0 1px 0 var(--border), 0 12px 28px rgba(0,0,0,0.4);
 }
 
 /* ── Login ── */
