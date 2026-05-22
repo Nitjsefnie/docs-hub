@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+psycopg[binary]
+psycopg_pool
+python-multipart
+pytest
+httpx
