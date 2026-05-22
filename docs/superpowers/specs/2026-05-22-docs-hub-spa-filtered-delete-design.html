@@ -1,0 +1,475 @@
+<!-- Copyright 2026 Anthropic PBC · SPDX-License-Identifier: Apache-2.0 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>docs-hub — SPA wiring + filtered delete (design spec)</title>
+<style>
+  :root {
+    --ivory:   #252420;
+    --slate:   #F5F3EC;
+    --clay:    #D97757;
+    --oat:     #3A352B;
+    --olive:   #8FA56E;
+    --gray-150:#2E2C27;
+    --gray-300:#3A3833;
+    --gray-500:#8F8D82;
+    --gray-700:#CFCCC2;
+    --serif: ui-serif, Georgia, "Times New Roman", serif;
+    --sans:  system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono:  ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #1B1A17;
+    color: var(--gray-700);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    padding: 56px 24px 120px;
+  }
+  .page {
+    max-width: 1100px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 210px minmax(0, 1fr);
+    gap: 48px;
+  }
+  @media (max-width: 920px) { .page { grid-template-columns: 1fr; } nav { display: none; } }
+
+  nav { position: sticky; top: 32px; align-self: start; font-size: 13px; }
+  nav .label {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--gray-500); margin-bottom: 12px;
+  }
+  nav a {
+    display: block; padding: 5px 0 5px 12px;
+    border-left: 2px solid var(--gray-300);
+    color: var(--gray-700); text-decoration: none;
+  }
+  nav a:hover { color: var(--slate); border-color: var(--slate); }
+  nav a.l2 { padding-left: 24px; font-size: 12.5px; color: var(--gray-500); }
+  nav .files { margin-top: 28px; border-top: 1px solid var(--gray-300); padding-top: 16px; }
+  nav .files code {
+    display: block; font-family: var(--mono); font-size: 11px;
+    color: var(--gray-500); padding: 3px 0;
+  }
+
+  header { margin-bottom: 12px; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--gray-500); margin-bottom: 10px;
+  }
+  h1 {
+    font-family: var(--serif); font-weight: 500; font-size: 32px;
+    color: var(--slate); letter-spacing: -0.01em; margin-bottom: 14px;
+  }
+  .tldr {
+    border: 1.5px solid var(--gray-300); border-left: 3px solid var(--clay);
+    border-radius: 10px; background: var(--ivory); padding: 16px 18px; margin-bottom: 8px;
+  }
+  .tldr b { color: var(--slate); }
+
+  h2 {
+    font-family: var(--serif); font-weight: 500; font-size: 22px;
+    color: var(--slate); margin: 40px 0 14px; scroll-margin-top: 24px;
+  }
+  h3 {
+    font-family: var(--serif); font-weight: 500; font-size: 17px;
+    color: var(--slate); margin: 22px 0 8px;
+  }
+  p { margin-bottom: 12px; max-width: 720px; }
+  ul, ol { padding-left: 22px; max-width: 720px; margin-bottom: 12px; }
+  li { margin-bottom: 6px; }
+  code { font-family: var(--mono); font-size: 13px; color: var(--gray-700); }
+  h3 code, li code, p code, td code { color: var(--clay); }
+  a.ext { color: var(--olive); }
+
+  details {
+    border: 1.5px solid var(--gray-300); border-radius: 10px;
+    background: var(--ivory); margin: 14px 0; overflow: hidden;
+  }
+  summary {
+    list-style: none; cursor: pointer; padding: 14px 16px;
+    font-family: var(--serif); font-size: 16px; color: var(--slate);
+    display: flex; align-items: baseline; gap: 10px;
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary::before {
+    content: "▸"; color: var(--clay); font-family: var(--sans);
+    font-size: 12px; transition: transform 120ms;
+  }
+  details[open] summary::before { transform: rotate(90deg); }
+  summary .where {
+    font-family: var(--mono); font-size: 11px; color: var(--gray-500); margin-left: auto;
+  }
+  details .body { padding: 0 16px 16px; }
+  details .body p { font-size: 14px; }
+  details .body ul { font-size: 14px; }
+
+  table { border-collapse: collapse; width: 100%; max-width: 720px; margin: 12px 0 16px; font-size: 13.5px; }
+  th, td { text-align: left; padding: 7px 11px; border-bottom: 1px solid var(--gray-300); vertical-align: top; }
+  th {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--gray-500); font-weight: 500;
+  }
+
+  .tabs {
+    border: 1.5px solid var(--gray-300); border-radius: 10px;
+    background: var(--ivory); margin: 16px 0 8px; overflow: hidden; max-width: 720px;
+  }
+  .tabbar { display: flex; border-bottom: 1px solid var(--gray-300); background: var(--gray-150); }
+  .tabbar button {
+    appearance: none; border: none; background: none; font-family: var(--mono);
+    font-size: 12px; color: var(--gray-500); padding: 10px 16px; cursor: pointer;
+    border-right: 1px solid var(--gray-300);
+  }
+  .tabbar button.on {
+    background: var(--ivory); color: var(--slate);
+    border-bottom: 2px solid var(--clay); margin-bottom: -1px;
+  }
+  .tabs pre {
+    display: none; margin: 0; padding: 16px 18px; font-family: var(--mono);
+    font-size: 12.5px; line-height: 1.6; color: var(--slate);
+    background: #121110; border-top: 1px solid var(--gray-300); overflow-x: auto;
+  }
+  .tabs pre.on { display: block; }
+  .hl { color: var(--clay); }
+  .cm { color: var(--gray-500); }
+  .ok { color: var(--olive); }
+
+  .callout {
+    display: flex; gap: 12px; border: 1.5px solid var(--oat);
+    background: rgba(58,53,43,0.55); border-radius: 10px;
+    padding: 14px 16px; margin: 18px 0; font-size: 14px; max-width: 720px;
+  }
+  .callout.warn { border-color: var(--clay); background: rgba(217,119,87,0.12); }
+  .callout .ico { color: var(--clay); font-weight: 600; }
+
+  .flow {
+    display: flex; flex-wrap: wrap; align-items: stretch; gap: 0;
+    margin: 16px 0; max-width: 720px;
+  }
+  .flow .step {
+    flex: 1; min-width: 130px; border: 1.5px solid var(--gray-300);
+    border-radius: 9px; background: var(--ivory); padding: 11px 13px;
+  }
+  .flow .step .n {
+    font-family: var(--mono); font-size: 10px; color: var(--clay); letter-spacing: 0.08em;
+  }
+  .flow .step .t { color: var(--slate); font-size: 13.5px; margin-top: 3px; }
+  .flow .step .d { font-size: 12px; color: var(--gray-500); margin-top: 4px; }
+  .flow .arrow { display: flex; align-items: center; color: var(--clay); padding: 0 8px; font-size: 16px; }
+  @media (max-width: 620px) { .flow .arrow { transform: rotate(90deg); } }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <nav>
+    <div class="label">On this page</div>
+    <a href="#tldr">TL;DR</a>
+    <a href="#part1">Part 1 · SPA wiring</a>
+    <a href="#part1" class="l2">File placement</a>
+    <a href="#part1" class="l2">app.py / routing</a>
+    <a href="#part1" class="l2">app.js rewire</a>
+    <a href="#part2">Part 2 · Filtered delete</a>
+    <a href="#part2" class="l2">Filters</a>
+    <a href="#part2" class="l2">Dry-run + token</a>
+    <a href="#part2" class="l2">API contract</a>
+    <a href="#data">Data-layer changes</a>
+    <a href="#testing">Testing</a>
+    <a href="#scope">Out of scope</a>
+    <div class="files">
+      <div class="label">Files touched</div>
+      <code>backend/app.py</code>
+      <code>backend/api.py</code>
+      <code>backend/views.py</code>
+      <code>backend/docs_repo.py</code>
+      <code>backend/storage.py</code>
+      <code>backend/session.py</code>
+      <code>public/* (new)</code>
+      <code>tests/* </code>
+    </div>
+  </nav>
+
+  <main>
+    <header>
+      <div class="eyebrow">docs-hub · design spec · 2026-05-22</div>
+      <h1>SPA wiring &amp; filtered delete</h1>
+      <div class="tldr" id="tldr">
+        <b>TL;DR</b> — Two changes to <code>docs-hub</code>. <b>(1)</b> Apply the <code>docs.zip</code>
+        front-end: the hash-routed SPA moves into <code>public/</code>, gets mounted as static files,
+        replaces the server-rendered index in <code>views.py</code>, and is rewired to fetch live data
+        from <code>/api/*</code> instead of the mock <code>data.js</code> (which is dropped). <b>(2)</b> Add
+        <code>POST /api/delete</code> — a filtered, whole-doc delete with a mandatory dry-run preview and an
+        HMAC confirm token, so a destructive bulk delete can never run unconfirmed or unfiltered.
+      </div>
+    </header>
+
+    <h2 id="part1">Part 1 — Apply <code>docs.zip</code>: wire the SPA to the backend</h2>
+    <p><code>docs.zip</code> contains a self-contained client-side SPA mockup
+      (<code>Docs&nbsp;Hub.html</code>, <code>app.js</code>, <code>styles.css</code>, <code>data.js</code>).
+      It is hash-routed (<code>#/</code>, <code>#/d/&lt;slug&gt;</code>, <code>#/d/&lt;slug&gt;/v&lt;n&gt;</code>,
+      <code>#/d/&lt;slug&gt;/versions</code>) and currently renders entirely from <code>window.DOCS</code> /
+      <code>window.VERSIONS</code> mock data in <code>data.js</code>. The backend today server-renders an
+      index table from <code>backend/views.py</code> and has no static-file mount. This part makes the SPA
+      the real front-end backed by live data.</p>
+
+    <h3>File placement</h3>
+    <table>
+      <tr><th>From zip</th><th>To</th><th>Notes</th></tr>
+      <tr><td><code>Docs Hub.html</code></td><td><code>public/index.html</code></td><td>Renamed; <code>&lt;script src="data.js"&gt;</code> tag removed.</td></tr>
+      <tr><td><code>app.js</code></td><td><code>public/app.js</code></td><td>Rewired — see below.</td></tr>
+      <tr><td><code>styles.css</code></td><td><code>public/styles.css</code></td><td>Unchanged.</td></tr>
+      <tr><td><code>data.js</code></td><td>— (dropped)</td><td>Mock data; live data comes from <code>/api/*</code>.</td></tr>
+    </table>
+    <p><code>docs.zip</code> is deleted from the repo root after extraction. Note <code>public/</code> is
+      already git-tracked and currently empty; <code>store/</code> remains git-ignored runtime data.</p>
+
+    <h3>app.py &amp; routing</h3>
+    <ul>
+      <li><code>app.py</code> mounts the SPA: <code>StaticFiles</code> serving <code>public/</code>, with
+        <code>public/index.html</code> returned for <code>GET /</code>.</li>
+      <li><code>views.py</code>: the server-rendered <code>index()</code> route (<code>GET /</code>) and its
+        <code>_INDEX_HEAD</code> template are <b>removed</b> — <code>/</code> now serves the SPA shell.</li>
+      <li><code>views.py</code>: <code>render_latest</code> (<code>GET /d/{slug}</code>) and
+        <code>render_version</code> (<code>GET /d/{slug}/v{n}</code>) <b>stay</b>. They return the raw
+        artifact HTML and are the <code>src</code> targets of the SPA doc-viewer <code>&lt;iframe&gt;</code>.
+        No collision: the SPA is hash-routed, so <code>#/d/...</code> is never sent to the server while
+        server <code>/d/...</code> paths still resolve.</li>
+    </ul>
+    <div class="callout">
+      <span class="ico">★</span>
+      <div>Mount ordering matters: the static mount for <code>/</code> must not shadow <code>/api/*</code>,
+        <code>/d/*</code>, <code>/login</code>, <code>/logout</code>, <code>/health</code>. Routers are
+        included first; the catch-all static mount is added last (or scoped so it only serves known asset
+        paths plus <code>/</code>).</div>
+    </div>
+
+    <h3>Auth interaction</h3>
+    <p>The existing <code>auth_middleware</code> treats <code>/</code> as non-public: an unauthenticated
+      visitor is redirected to the real server-side <code>/login</code> page (from <code>login.py</code>).
+      Therefore the SPA is only ever served to a logged-in human.</p>
+    <ul>
+      <li>The SPA's own <code>#/login</code> screen and its hardcoded <code>uid==='19' / 'hunter2'</code>
+        check are <b>removed</b> — the server <code>/login</code> page is the single source of auth.</li>
+      <li>The SPA top-bar "logout" link points at the server <code>/logout</code> route.</li>
+      <li>The fake top-bar <code>user 19</code> label is replaced with the real session user id, exposed by
+        a tiny <code>GET /api/whoami</code> endpoint returning <code>{ok, user_id}</code> for the current
+        principal.</li>
+    </ul>
+
+    <h3>app.js rewire</h3>
+    <p>The screen-render functions keep their structure; only the data source changes from synchronous
+      <code>window.DOCS</code> reads to async <code>fetch()</code> calls. The existing client-side
+      <code>applyFilters()</code> / sort logic is kept verbatim — index filtering stays client-side over the
+      full doc list.</p>
+    <table>
+      <tr><th>Screen</th><th>Was (mock)</th><th>Now (live)</th></tr>
+      <tr><td>Index</td><td><code>window.DOCS</code></td><td><code>GET /api/list</code> → cached doc list</td></tr>
+      <tr><td>Doc viewer</td><td><code>window.VERSIONS</code> + <code>SAMPLE_ARTIFACT</code></td><td><code>GET /api/versions/{slug}</code> for meta; iframe <code>src=/d/{slug}/v{n}</code></td></tr>
+      <tr><td>Version history</td><td><code>window.VERSIONS</code></td><td><code>GET /api/versions/{slug}</code></td></tr>
+    </table>
+    <ul>
+      <li>The index <b>Size</b> column and size-sort need each doc's latest-version byte size.
+        <code>/api/list</code> is extended to include <code>byte_size</code> (see
+        <a href="#data">Data-layer changes</a>) — no N+1 version fetch.</li>
+      <li>The doc-viewer needs doc title/project (not in <code>/api/versions</code>). The SPA reuses the
+        cached <code>/api/list</code> result for that meta; the version list comes from
+        <code>/api/versions/{slug}</code>.</li>
+      <li>Fetch failures render an inline error state rather than throwing; a missing slug renders the
+        existing <code>renderNotFound</code> screen.</li>
+    </ul>
+
+    <h2 id="part2">Part 2 — Filtered delete endpoint</h2>
+    <p>A new <code>POST /api/delete</code> removes whole documents (a doc row plus all its versions and all
+      its blobs) selected by a filter set. Because a filter can match many docs at once, the endpoint is
+      built around a mandatory two-step <b>dry-run → confirm</b> handshake.</p>
+
+    <h3>Authentication</h3>
+    <p>Accepts <b>either</b> the agent API key <b>or</b> a human session cookie. The
+      <code>auth_middleware</code> already admits both principals for <code>/api/*</code>, so — unlike
+      <code>/api/publish</code> — the delete handler does <b>not</b> call <code>_require_agent</code>. Both a
+      CLI agent and a logged-in human in the SPA can call it.</p>
+
+    <h3>Filters</h3>
+    <p>All fields optional, combined with <b>AND</b>. The matched set is "whole docs"; filters that name a
+      version attribute match a doc by its <em>latest</em> version.</p>
+    <table>
+      <tr><th>Field</th><th>Matches</th></tr>
+      <tr><td><code>slug</code></td><td>Exact slug.</td></tr>
+      <tr><td><code>project</code></td><td><code>docs.project</code> exact.</td></tr>
+      <tr><td><code>author</code></td><td><code>posted_by</code> of the latest version.</td></tr>
+      <tr><td><code>tag</code></td><td>Tag present in <code>docs.tags[]</code>.</td></tr>
+      <tr><td><code>q</code></td><td>Case-insensitive substring of title or slug.</td></tr>
+      <tr><td><code>updated_before</code> / <code>updated_after</code></td><td>ISO-8601 bound on <code>docs.updated_at</code>.</td></tr>
+    </table>
+    <div class="callout warn">
+      <span class="ico">!</span>
+      <div>An <b>empty filter set is rejected</b> with <code>400</code>. The endpoint will never match-all —
+        deleting every document requires explicit per-filter intent.</div>
+    </div>
+
+    <h3>Dry-run + confirm token</h3>
+    <div class="flow">
+      <div class="step">
+        <div class="n">CALL 1</div>
+        <div class="t">Preview</div>
+        <div class="d">Filters, no <code>confirm_token</code>.</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step">
+        <div class="n">SERVER</div>
+        <div class="t">Match + sign</div>
+        <div class="d">Returns matched docs, count, and an HMAC token over the normalized filters.</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step">
+        <div class="n">CALL 2</div>
+        <div class="t">Confirm</div>
+        <div class="d">Same filters + the <code>confirm_token</code>.</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step">
+        <div class="n">SERVER</div>
+        <div class="t">Delete</div>
+        <div class="d">Re-derives token, deletes rows + blobs, returns count.</div>
+      </div>
+    </div>
+    <ul>
+      <li>The token is <code>HMAC-SHA256(SESSION_SECRET, canonical_filters + "." + issued_at)</code>, carried
+        as <code>&lt;issued_at&gt;.&lt;hmac&gt;</code>. Reuses the <code>SESSION_SECRET</code> already used
+        for session cookies; lives in <code>session.py</code> alongside the cookie helpers.</li>
+      <li><b>TTL ≈ 5 minutes.</b> A stale token is rejected — the caller must re-preview.</li>
+      <li>The token binds to the <em>canonical filter set</em>: the confirm call recomputes the HMAC from
+        its own filter params and compares. A token previewed for <code>project=A</code> cannot be replayed
+        to delete <code>project=B</code>.</li>
+      <li>Canonicalization: filter keys sorted, empty values dropped, values trimmed — so semantically equal
+        filter sets produce the same token regardless of param order.</li>
+    </ul>
+
+    <h3>API contract</h3>
+    <div class="tabs" data-tabs>
+      <div class="tabbar">
+        <button class="on" data-t="0">preview req/resp</button>
+        <button data-t="1">confirm req/resp</button>
+        <button data-t="2">error cases</button>
+      </div>
+<pre class="on"><span class="cm"># CALL 1 — preview (no confirm_token)</span>
+POST /api/delete
+Content-Type: application/json
+
+{ "project": "analyst", "updated_before": "2026-01-01T00:00:00Z" }
+
+<span class="cm"># 200 — nothing deleted yet</span>
+{
+  <span class="hl">"ok"</span>: true,
+  <span class="hl">"preview"</span>: true,
+  "count": 3,
+  "matched": [
+    { "slug": "analyst/2025-q3-roll-up", "title": "Q3 roll-up", "latest_version": 4 },
+    { "slug": "analyst/2025-q4-roll-up", "title": "Q4 roll-up", "latest_version": 2 },
+    { "slug": "analyst/onboarding",      "title": "Onboarding", "latest_version": 1 }
+  ],
+  <span class="hl">"confirm_token"</span>: "1747900000.9f3c…a1"
+}</pre>
+<pre><span class="cm"># CALL 2 — confirm (same filters + token)</span>
+POST /api/delete
+Content-Type: application/json
+
+{
+  "project": "analyst",
+  "updated_before": "2026-01-01T00:00:00Z",
+  <span class="hl">"confirm_token"</span>: "1747900000.9f3c…a1"
+}
+
+<span class="cm"># 200 — docs, versions and blobs removed</span>
+{ <span class="ok">"ok"</span>: true, "preview": false, "deleted": 3 }</pre>
+<pre><span class="cm"># empty filter set</span>
+400  { "ok": false, "error": "at least one filter required" }
+
+<span class="cm"># token expired or filters changed since preview</span>
+409  { "ok": false, "error": "confirm token invalid or expired" }
+
+<span class="cm"># neither API key nor session cookie  (from middleware)</span>
+401  { "ok": false, "error": "Unauthorized" }
+
+<span class="cm"># confirm matched zero docs (e.g. deleted meanwhile)</span>
+200  { "ok": true, "preview": false, "deleted": 0 }</pre>
+    </div>
+
+    <h3>Delete execution</h3>
+    <p>For each matched doc, in one transaction per doc: delete the <code>docs</code> row — <code>doc_versions</code>
+      rows cascade via the existing <code>ON DELETE CASCADE</code> FK — then remove the blob directory
+      <code>&lt;STORE_ROOT&gt;/&lt;slug&gt;/</code> via a new <code>storage.delete_doc(slug)</code>. Blob
+      removal is best-effort-logged but a missing directory is not an error (idempotent). DB delete commits
+      before blob removal so a crash leaves orphan blobs (harmless) rather than orphan rows.</p>
+
+    <h2 id="data">Data-layer changes</h2>
+    <table>
+      <tr><th>Unit</th><th>Change</th></tr>
+      <tr><td><code>docs_repo.list_docs</code></td><td>Add <code>byte_size</code> of the latest version to each row (the SQL JOIN already targets the latest-version row — one extra selected column). <code>/api/list</code> serializes it.</td></tr>
+      <tr><td><code>docs_repo.find_docs(filters)</code></td><td><b>New.</b> Server-side filtered query returning <code>{slug, title, latest_version}</code> for the matched set. Powers the delete preview. Filters per the Part 2 table.</td></tr>
+      <tr><td><code>docs_repo.delete_docs(slugs)</code></td><td><b>New.</b> Deletes the given doc rows (versions cascade) and calls <code>storage.delete_doc</code> for each. Returns the count actually deleted.</td></tr>
+      <tr><td><code>storage.delete_doc(slug)</code></td><td><b>New.</b> Validates the slug, removes <code>&lt;STORE_ROOT&gt;/&lt;slug&gt;/</code> recursively; no-op if absent.</td></tr>
+      <tr><td><code>session.py</code></td><td><b>New</b> <code>make_delete_token(filters)</code> / <code>verify_delete_token(token, filters)</code> — HMAC over canonical filters, ~5&nbsp;min TTL.</td></tr>
+      <tr><td><code>api.py</code></td><td><b>New</b> <code>POST /api/delete</code> and <code>GET /api/whoami</code>.</td></tr>
+    </table>
+    <p>No schema migration: <code>doc_versions.doc_id</code> already has <code>ON DELETE CASCADE</code>, so a
+      <code>docs</code> row delete removes its versions. Blobs are not in the DB and need the explicit
+      <code>storage.delete_doc</code> step.</p>
+
+    <h2 id="testing">Testing</h2>
+    <p>TDD per the repo convention — failing test first, then minimal implementation. New / extended pytest
+      coverage:</p>
+    <ul>
+      <li><code>test_storage.py</code> — <code>delete_doc</code> removes the dir; no-op on a missing dir;
+        rejects an invalid slug.</li>
+      <li><code>test_docs_repo.py</code> — <code>find_docs</code> for each filter and AND-combinations;
+        <code>delete_docs</code> removes rows + versions + blobs; <code>list_docs</code> now carries
+        <code>byte_size</code>.</li>
+      <li><code>test_session.py</code> — delete-token round-trips; rejects a tampered token, an expired
+        token, and a token whose filters were changed.</li>
+      <li><code>test_app.py</code> — <code>POST /api/delete</code> preview returns a token and deletes
+        nothing; confirm deletes; empty filters → <code>400</code>; bad/expired token → <code>409</code>;
+        no auth → <code>401</code>; agent key and human cookie both accepted; <code>GET /</code> serves the
+        SPA shell; static assets resolve; <code>/d/{slug}</code> still renders raw HTML.</li>
+    </ul>
+    <p>End-to-end check after wiring: log in, load <code>/</code>, confirm the SPA index lists real docs,
+      open a doc, preview then confirm a filtered delete, confirm the doc is gone from the index and the
+      blob directory is removed.</p>
+
+    <h2 id="scope">Out of scope</h2>
+    <ul>
+      <li><b>Single-version deletion.</b> Delete operates on whole docs only. Removing one version of a
+        multi-version doc (which would require recomputing <code>latest_version</code> and could leave a
+        doc with zero versions) is not built. A <code>version</code> filter is therefore not offered.</li>
+      <li><b>A delete control inside the SPA UI.</b> The endpoint is reachable by the agent CLI and by a
+        logged-in human via direct call, but no delete button/affordance is added to the SPA screens in
+        this change.</li>
+      <li><b>Server-side index filtering.</b> The index keeps client-side filtering over the full
+        <code>/api/list</code> result; <code>/api/list</code> is not extended with <code>tag</code>/<code>q</code>/sort
+        params.</li>
+      <li><b>Undo / soft-delete / trash.</b> Delete is permanent.</li>
+    </ul>
+  </main>
+
+</div>
+
+<script>
+document.querySelectorAll("[data-tabs]").forEach(box => {
+  const btns = box.querySelectorAll("button");
+  const panes = box.querySelectorAll("pre");
+  btns.forEach(b => b.addEventListener("click", () => {
+    btns.forEach(x => x.classList.remove("on"));
+    panes.forEach(x => x.classList.remove("on"));
+    b.classList.add("on");
+    panes[+b.dataset.t].classList.add("on");
+  }));
+});
+</script>
+</body>
+</html>
