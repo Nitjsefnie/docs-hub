@@ -1,0 +1,1327 @@
+<!-- Copyright 2026 Anthropic PBC · SPDX-License-Identifier: Apache-2.0 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>docs-hub — SPA wiring + filtered delete (implementation plan)</title>
+<style>
+  :root {
+    --bg:#1B1A17; --ivory:#252420; --slate:#F5F3EC; --clay:#D97757;
+    --oat:#3A352B; --olive:#8FA56E; --gray-150:#2E2C27; --gray-300:#3A3833;
+    --gray-500:#8F8D82; --gray-700:#CFCCC2;
+    --serif:ui-serif,Georgia,"Times New Roman",serif;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body {
+    background:var(--bg); color:var(--gray-700); font-family:var(--sans);
+    font-size:15px; line-height:1.62; -webkit-font-smoothing:antialiased;
+    padding:56px 24px 120px;
+  }
+  main { max-width:880px; margin:0 auto; }
+  h1 {
+    font-family:var(--serif); font-weight:500; font-size:31px; color:var(--slate);
+    letter-spacing:-0.01em; margin:8px 0 18px; line-height:1.18;
+  }
+  h2 {
+    font-family:var(--serif); font-weight:500; font-size:22px; color:var(--slate);
+    margin:42px 0 12px; padding-top:18px; border-top:1px solid var(--gray-300);
+  }
+  h3 {
+    font-family:var(--serif); font-weight:500; font-size:16.5px; color:var(--slate);
+    margin:22px 0 8px;
+  }
+  p { margin:10px 0; }
+  ul, ol { margin:10px 0; padding-left:24px; }
+  li { margin:5px 0; }
+  li.task { list-style:none; margin-left:-20px; }
+  li.task.done { color:var(--gray-500); }
+  strong { color:var(--slate); }
+  a { color:var(--olive); }
+  hr { border:0; border-top:1px solid var(--gray-300); margin:34px 0; }
+  code {
+    font-family:var(--mono); font-size:12.5px; color:var(--clay);
+    background:var(--gray-150); padding:1px 5px; border-radius:4px;
+  }
+  pre {
+    background:#121110; border:1px solid var(--gray-300); border-radius:9px;
+    padding:14px 16px; overflow-x:auto; margin:12px 0;
+  }
+  pre code {
+    color:var(--slate); background:none; padding:0; font-size:12.5px; line-height:1.6;
+  }
+  blockquote {
+    border-left:3px solid var(--clay); background:var(--ivory);
+    border-radius:0 8px 8px 0; padding:12px 16px; margin:14px 0; color:var(--gray-700);
+  }
+  blockquote p { margin:4px 0; }
+  table { border-collapse:collapse; width:100%; margin:14px 0; font-size:13.5px; }
+  th, td { text-align:left; padding:7px 11px; border-bottom:1px solid var(--gray-300); }
+  th {
+    font-family:var(--mono); font-size:10.5px; letter-spacing:0.05em;
+    text-transform:uppercase; color:var(--gray-500); font-weight:500;
+  }
+  .eyebrow {
+    font-family:var(--mono); font-size:11px; letter-spacing:0.08em;
+    text-transform:uppercase; color:var(--gray-500); margin-bottom:6px;
+  }
+</style>
+</head>
+<body>
+<main>
+<div class="eyebrow">docs-hub &middot; implementation plan &middot; 2026-05-22</div>
+<h1>docs-hub SPA Wiring + Filtered Delete — Implementation Plan</h1>
+<blockquote>
+<p><strong>For agentic workers:</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (<code>- [ ]</code>) syntax for tracking.</p>
+</blockquote>
+<p><strong>Goal:</strong> Replace the server-rendered docs-hub index with the <code>docs.zip</code> SPA wired to live <code>/api/*</code> data, and add a safe filtered bulk-delete endpoint.</p>
+<p><strong>Architecture:</strong> The hash-routed SPA moves into <code>public/</code>, is mounted via <code>StaticFiles</code>, and fetches live data instead of the mock <code>data.js</code>. A new <code>POST /api/delete</code> selects whole docs by an AND-combined filter set and runs a mandatory dry-run → HMAC-confirm-token handshake before deleting rows, versions, and blobs.</p>
+<p><strong>Tech Stack:</strong> Python 3.13, FastAPI, Starlette, psycopg3 / Postgres, pytest, vanilla-JS SPA.</p>
+<p><strong>Spec:</strong> <code>docs/superpowers/specs/2026-05-22-docs-hub-spa-filtered-delete-design.html</code></p>
+<p><strong>Commit convention:</strong> Every commit carries a <code>Co-Authored-By:</code> trailer naming the agent that authored it (per repo <code>AGENTS.md</code>). The <code>git commit</code> commands below omit the trailer for brevity — the executing agent appends its own.</p>
+<p><strong>Run tests with:</strong> <code>.venv/bin/pytest -v</code> (a clean <code>docs_test</code> DB + temp blob store are built by <code>tests/conftest.py</code>).</p>
+<hr />
+<h2>Task 1: <code>storage.delete_doc</code> — remove a doc's blob directory</h2>
+<p><strong>Files:</strong>
+- Modify: <code>backend/storage.py</code>
+- Test: <code>tests/test_storage.py</code></p>
+<ul>
+<li class="task">&#9744; <strong>Step 1: Write the failing tests</strong></li>
+</ul>
+<p>Append to <code>tests/test_storage.py</code>:</p>
+<pre><code class="language-python">def test_delete_doc_removes_dir():
+    storage.store_blob(&quot;analyst/del&quot;, 1, b&quot;&lt;h1&gt;x&lt;/h1&gt;&quot;)
+    storage.store_blob(&quot;analyst/del&quot;, 2, b&quot;&lt;h1&gt;y&lt;/h1&gt;&quot;)
+    root = os.path.join(os.environ[&quot;STORE_ROOT&quot;], &quot;analyst&quot;, &quot;del&quot;)
+    assert os.path.isdir(root)
+    storage.delete_doc(&quot;analyst/del&quot;)
+    assert not os.path.exists(root)
+
+
+def test_delete_doc_missing_is_noop():
+    storage.delete_doc(&quot;analyst/never-stored&quot;)  # must not raise
+
+
+def test_delete_doc_rejects_bad_slug():
+    with pytest.raises(ValueError):
+        storage.delete_doc(&quot;../evil&quot;)
+</code></pre>
+<ul>
+<li class="task">&#9744; <strong>Step 2: Run tests to verify they fail</strong></li>
+</ul>
+<p>Run: <code>.venv/bin/pytest tests/test_storage.py -v -k delete_doc</code>
+Expected: FAIL — <code>AttributeError: module 'backend.storage' has no attribute 'delete_doc'</code></p>
+<ul>
+<li class="task">&#9744; <strong>Step 3: Write the implementation</strong></li>
+</ul>
+<p>In <code>backend/storage.py</code>, add <code>import shutil</code> to the imports block (alongside <code>import hashlib</code>, <code>import os</code>, <code>import re</code>), then add this function at the end of the file:</p>
+<pre><code class="language-python">def delete_doc(slug: str) -&gt; None:
+    &quot;&quot;&quot;Remove the blob directory for a slug. No-op if it does not exist.&quot;&quot;&quot;
+    if not is_valid_slug(slug):
+        raise ValueError(f&quot;invalid slug: {slug!r}&quot;)
+    path = os.path.join(_store_root(), slug)
+    shutil.rmtree(path, ignore_errors=True)
+</code></pre>
+<ul>
+<li class="task">&#9744; <strong>Step 4: Run tests to verify they pass</strong></li>
+</ul>
+<p>Run: <code>.venv/bin/pytest tests/test_storage.py -v</code>
+Expected: PASS (all storage tests)</p>
+<ul>
+<li class="task">&#9744; <strong>Step 5: Commit</strong></li>
+</ul>
+<pre><code class="language-bash">git add backend/storage.py tests/test_storage.py
+git commit -m &quot;feat: storage.delete_doc removes a doc's blob directory&quot;
+</code></pre>
+<hr />
+<h2>Task 2: <code>list_docs</code> returns <code>byte_size</code> of the latest version</h2>
+<p><strong>Files:</strong>
+- Modify: <code>backend/docs_repo.py</code> (the <code>list_docs</code> function)
+- Test: <code>tests/test_docs_repo.py</code></p>
+<ul>
+<li class="task">&#9744; <strong>Step 1: Write the failing test</strong></li>
+</ul>
+<p>Append to <code>tests/test_docs_repo.py</code>:</p>
+<pre><code class="language-python">def test_list_docs_includes_byte_size():
+    body = b&quot;&lt;h1&gt;sized body&lt;/h1&gt;&quot;
+    docs_repo.publish(&quot;a/sz&quot;, &quot;Sized&quot;, [], None, &quot;analyst&quot;, body)
+    d = docs_repo.list_docs()[0]
+    assert d[&quot;byte_size&quot;] == len(body)
+</code></pre>
+<ul>
+<li class="task">&#9744; <strong>Step 2: Run test to verify it fails</strong></li>
+</ul>
+<p>Run: <code>.venv/bin/pytest tests/test_docs_repo.py::test_list_docs_includes_byte_size -v</code>
+Expected: FAIL — <code>KeyError: 'byte_size'</code></p>
+<ul>
+<li class="task">&#9744; <strong>Step 3: Modify <code>list_docs</code></strong></li>
+</ul>
+<p>In <code>backend/docs_repo.py</code>, replace the entire <code>list_docs</code> function with:</p>
+<pre><code class="language-python">def list_docs(project: str | None = None, agent: str | None = None) -&gt; list[dict]:
+    &quot;&quot;&quot;Newest-updated first. `agent` filters by the poster of the latest version.&quot;&quot;&quot;
+    sql = (
+        &quot;SELECT d.slug, d.title, d.tags, d.project, d.updated_at, &quot;
+        &quot;d.latest_version, v.posted_by, v.byte_size &quot;
+        &quot;FROM docs d JOIN doc_versions v &quot;
+        &quot;ON v.doc_id=d.id AND v.version=d.latest_version&quot;
+    )
+    clauses, params = [], []
+    if project is not None:
+        clauses.append(&quot;d.project=%s&quot;)
+        params.append(project)
+    if agent is not None:
+        clauses.append(&quot;v.posted_by=%s&quot;)
+        params.append(agent)
+    if clauses:
+        sql += &quot; WHERE &quot; + &quot; AND &quot;.join(clauses)
+    sql += &quot; ORDER BY d.updated_at DESC&quot;
+    with db.docs_conn() as c:
+        rows = c.execute(sql, params).fetchall()
+    return [
+        {&quot;slug&quot;: r[0], &quot;title&quot;: r[1], &quot;tags&quot;: r[2], &quot;project&quot;: r[3],
+         &quot;updated_at&quot;: r[4], &quot;latest_version&quot;: r[5], &quot;posted_by&quot;: r[6],
+         &quot;byte_size&quot;: r[7]}
+        for r in rows
+    ]
+</code></pre>
+<ul>
+<li class="task">&#9744; <strong>Step 4: Run tests to verify they pass</strong></li>
+</ul>
+<p>Run: <code>.venv/bin/pytest tests/test_docs_repo.py -v</code>
+Expected: PASS (all docs_repo tests)</p>
+<ul>
+<li class="task">&#9744; <strong>Step 5: Commit</strong></li>
+</ul>
+<pre><code class="language-bash">git add backend/docs_repo.py tests/test_docs_repo.py
+git commit -m &quot;feat: list_docs returns latest-version byte_size&quot;
+</code></pre>
+<hr />
+<h2>Task 3: <code>docs_repo.find_docs</code> — filtered doc lookup</h2>
+<p><strong>Files:</strong>
+- Modify: <code>backend/docs_repo.py</code>
+- Test: <code>tests/test_docs_repo.py</code></p>
+<ul>
+<li class="task">&#9744; <strong>Step 1: Write the failing tests</strong></li>
+</ul>
+<p>Append to <code>tests/test_docs_repo.py</code>:</p>
+<pre><code class="language-python">def test_find_docs_by_each_filter():
+    docs_repo.publish(&quot;a/one&quot;, &quot;Alpha One&quot;, [&quot;x&quot;], &quot;alpha&quot;, &quot;analyst&quot;, b&quot;&lt;h1&gt;1&lt;/h1&gt;&quot;)
+    docs_repo.publish(&quot;a/two&quot;, &quot;Beta Two&quot;, [&quot;y&quot;], &quot;beta&quot;, &quot;kimi&quot;, b&quot;&lt;h1&gt;2&lt;/h1&gt;&quot;)
+    assert [d[&quot;slug&quot;] for d in docs_repo.find_docs({&quot;slug&quot;: &quot;a/one&quot;})] == [&quot;a/one&quot;]
+    assert [d[&quot;slug&quot;] for d in docs_repo.find_docs({&quot;project&quot;: &quot;alpha&quot;})] == [&quot;a/one&quot;]
+    assert [d[&quot;slug&quot;] for d in docs_repo.find_docs({&quot;author&quot;: &quot;kimi&quot;})] == [&quot;a/two&quot;]
+    assert [d[&quot;slug&quot;] for d in docs_repo.find_docs({&quot;tag&quot;: &quot;x&quot;})] == [&quot;a/one&quot;]
+    assert [d[&quot;slug&quot;] for d in docs_repo.find_docs({&quot;q&quot;: &quot;beta&quot;})] == [&quot;a/two&quot;]
+    assert {d[&quot;slug&quot;] for d in docs_repo.find_docs({})} == {&quot;a/one&quot;, &quot;a/two&quot;}
+
+
+def test_find_docs_and_combines():
+    docs_repo.publish(&quot;a/one&quot;, &quot;Alpha One&quot;, [], &quot;alpha&quot;, &quot;analyst&quot;, b&quot;&lt;h1&gt;1&lt;/h1&gt;&quot;)
+    docs_repo.publish(&quot;a/two&quot;, &quot;Alpha Two&quot;, [], &quot;alpha&quot;, &quot;kimi&quot;, b&quot;&lt;h1&gt;2&lt;/h1&gt;&quot;)
+    res = docs_repo.find_docs({&quot;project&quot;: &quot;alpha&quot;, &quot;author&quot;: &quot;kimi&quot;})
+    assert [d[&quot;slug&quot;] for d in res] == [&quot;a/two&quot;]
+
+
+def test_find_docs_shape():
+    docs_repo.publish(&quot;a/one&quot;, &quot;Alpha One&quot;, [], &quot;alpha&quot;, &quot;analyst&quot;, b&quot;&lt;h1&gt;1&lt;/h1&gt;&quot;)
+    d = docs_repo.find_docs({&quot;project&quot;: &quot;alpha&quot;})[0]
+    assert set(d) == {&quot;slug&quot;, &quot;title&quot;, &quot;latest_version&quot;}
+</code></pre>
+<ul>
+<li class="task">&#9744; <strong>Step 2: Run tests to verify they fail</strong></li>
+</ul>
+<p>Run: <code>.venv/bin/pytest tests/test_docs_repo.py -v -k find_docs</code>
+Expected: FAIL — <code>AttributeError: module 'backend.docs_repo' has no attribute 'find_docs'</code></p>
+<ul>
+<li class="task">&#9744; <strong>Step 3: Write the implementation</strong></li>
+</ul>
+<p>In <code>backend/docs_repo.py</code>, add this function after <code>list_docs</code>:</p>
+<pre><code class="language-python">def find_docs(filters: dict) -&gt; list[dict]:
+    &quot;&quot;&quot;Docs matching the AND-combined filter set. Returns
+    [{slug, title, latest_version}], newest-updated first.
+
+    Recognised filter keys (all optional): slug, project, author, tag, q,
+    updated_before, updated_after.
+    &quot;&quot;&quot;
+    sql = (
+        &quot;SELECT d.slug, d.title, d.latest_version &quot;
+        &quot;FROM docs d JOIN doc_versions v &quot;
+        &quot;ON v.doc_id=d.id AND v.version=d.latest_version&quot;
+    )
+    clauses, params = [], []
+    if filters.get(&quot;slug&quot;):
+        clauses.append(&quot;d.slug=%s&quot;)
+        params.append(filters[&quot;slug&quot;])
+    if filters.get(&quot;project&quot;):
+        clauses.append(&quot;d.project=%s&quot;)
+        params.append(filters[&quot;project&quot;])
+    if filters.get(&quot;author&quot;):
+        clauses.append(&quot;v.posted_by=%s&quot;)
+        params.append(filters[&quot;author&quot;])
+    if filters.get(&quot;tag&quot;):
+        clauses.append(&quot;%s = ANY(d.tags)&quot;)
+        params.append(filters[&quot;tag&quot;])
+    if filters.get(&quot;q&quot;):
+        clauses.append(&quot;(d.title ILIKE %s OR d.slug ILIKE %s)&quot;)
+        like = f&quot;%{filters['q']}%&quot;
+        params += [like, like]
+    if filters.get(&quot;updated_before&quot;):
+        clauses.append(&quot;d.updated_at &lt; %s&quot;)
+        params.append(filters[&quot;updated_before&quot;])
+    if filters.get(&quot;updated_after&quot;):
+        clauses.append(&quot;d.updated_at &gt; %s&quot;)
+        params.append(filters[&quot;updated_after&quot;])
+    if clauses:
+        sql += &quot; WHERE &quot; + &quot; AND &quot;.join(clauses)
+    sql += &quot; ORDER BY d.updated_at DESC&quot;
+    with db.docs_conn() as c:
+        rows = c.execute(sql, params).fetchall()
+    return [{&quot;slug&quot;: r[0], &quot;title&quot;: r[1], &quot;latest_version&quot;: r[2]} for r in rows]
+</code></pre>
+<ul>
+<li class="task">&#9744; <strong>Step 4: Run tests to verify they pass</strong></li>
+</ul>
+<p>Run: <code>.venv/bin/pytest tests/test_docs_repo.py -v</code>
+Expected: PASS</p>
+<ul>
+<li class="task">&#9744; <strong>Step 5: Commit</strong></li>
+</ul>
+<pre><code class="language-bash">git add backend/docs_repo.py tests/test_docs_repo.py
+git commit -m &quot;feat: docs_repo.find_docs filtered lookup&quot;
+</code></pre>
+<hr />
+<h2>Task 4: <code>docs_repo.delete_docs</code> — delete rows, versions, blobs</h2>
+<p><strong>Files:</strong>
+- Modify: <code>backend/docs_repo.py</code>
+- Test: <code>tests/test_docs_repo.py</code></p>
+<ul>
+<li class="task">&#9744; <strong>Step 1: Write the failing tests</strong></li>
+</ul>
+<p>Add <code>import os</code> to the imports at the top of <code>tests/test_docs_repo.py</code> (it currently imports only <code>pytest</code> and <code>docs_repo</code>), then append:</p>
+<pre><code class="language-python">def test_delete_docs_removes_rows_versions_blobs():
+    docs_repo.publish(&quot;a/del&quot;, &quot;Del&quot;, [], None, &quot;analyst&quot;, b&quot;&lt;h1&gt;1&lt;/h1&gt;&quot;)
+    docs_repo.publish(&quot;a/del&quot;, &quot;Del&quot;, [], None, &quot;analyst&quot;, b&quot;&lt;h1&gt;2&lt;/h1&gt;&quot;)
+    n = docs_repo.delete_docs([&quot;a/del&quot;])
+    assert n == 1
+    assert docs_repo.get_latest(&quot;a/del&quot;) is None
+    assert docs_repo.list_versions(&quot;a/del&quot;) == []
+    blob_dir = os.path.join(os.environ[&quot;STORE_ROOT&quot;], &quot;a&quot;, &quot;del&quot;)
+    assert not os.path.exists(blob_dir)
+
+
+def test_delete_docs_unknown_slug_counts_zero():
+    assert docs_repo.delete_docs([&quot;nope/nope&quot;]) == 0
+
+
+def test_delete_docs_partial_set():
+    docs_repo.publish(&quot;a/keep&quot;, &quot;Keep&quot;, [], None, &quot;analyst&quot;, b&quot;&lt;h1&gt;k&lt;/h1&gt;&quot;)
+    docs_repo.publish(&quot;a/drop&quot;, &quot;Drop&quot;, [], None, &quot;analyst&quot;, b&quot;&lt;h1&gt;d&lt;/h1&gt;&quot;)
+    assert docs_repo.delete_docs([&quot;a/drop&quot;, &quot;missing/x&quot;]) == 1
+    assert docs_repo.get_latest(&quot;a/keep&quot;) is not None
+    assert docs_repo.get_latest(&quot;a/drop&quot;) is None
+</code></pre>
+<ul>
+<li class="task">&#9744; <strong>Step 2: Run tests to verify they fail</strong></li>
+</ul>
+<p>Run: <code>.venv/bin/pytest tests/test_docs_repo.py -v -k delete_docs</code>
+Expected: FAIL — <code>AttributeError: module 'backend.docs_repo' has no attribute 'delete_docs'</code></p>
+<ul>
+<li class="task">&#9744; <strong>Step 3: Write the implementation</strong></li>
+</ul>
+<p>In <code>backend/docs_repo.py</code>, add this function after <code>find_docs</code>:</p>
+<pre><code class="language-python">def delete_docs(slugs: list[str]) -&gt; int:
+    &quot;&quot;&quot;Delete the named docs (versions cascade via the doc_versions FK) and
+    their blob directories. Returns the count of doc rows actually deleted.
+    The DB delete commits before blob removal, so a crash leaves orphan
+    blobs (harmless) rather than orphan rows.&quot;&quot;&quot;
+    deleted = 0
+    for slug in slugs:
+        with db.docs_conn() as c:
+            row = c.execute(&quot;DELETE FROM docs WHERE slug=%s RETURNING id&quot;,
+                            (slug,)).fetchone()
+            c.commit()
+        if row is not None:
+            deleted += 1
+            storage.delete_doc(slug)
+    return deleted
+</code></pre>
+<ul>
+<li class="task">&#9744; <strong>Step 4: Run tests to verify they pass</strong></li>
+</ul>
+<p>Run: <code>.venv/bin/pytest tests/test_docs_repo.py -v</code>
+Expected: PASS</p>
+<ul>
+<li class="task">&#9744; <strong>Step 5: Commit</strong></li>
+</ul>
+<pre><code class="language-bash">git add backend/docs_repo.py tests/test_docs_repo.py
+git commit -m &quot;feat: docs_repo.delete_docs removes rows, versions and blobs&quot;
+</code></pre>
+<hr />
+<h2>Task 5: Delete confirm-token helpers in <code>session.py</code></h2>
+<p><strong>Files:</strong>
+- Modify: <code>backend/session.py</code>
+- Test: <code>tests/test_session.py</code></p>
+<ul>
+<li class="task">&#9744; <strong>Step 1: Write the failing tests</strong></li>
+</ul>
+<p>Append to <code>tests/test_session.py</code>:</p>
+<pre><code class="language-python">def test_delete_token_roundtrip():
+    f = {&quot;project&quot;: &quot;analyst&quot;}
+    tok = session.make_delete_token(f)
+    assert session.verify_delete_token(tok, f) is True
+
+
+def test_delete_token_filter_order_insensitive():
+    tok = session.make_delete_token({&quot;project&quot;: &quot;p&quot;, &quot;author&quot;: &quot;a&quot;})
+    assert session.verify_delete_token(tok, {&quot;author&quot;: &quot;a&quot;, &quot;project&quot;: &quot;p&quot;}) is True
+
+
+def test_delete_token_rejects_changed_filters():
+    tok = session.make_delete_token({&quot;project&quot;: &quot;alpha&quot;})
+    assert session.verify_delete_token(tok, {&quot;project&quot;: &quot;beta&quot;}) is False
+
+
+def test_delete_token_rejects_tampered():
+    tok = session.make_delete_token({&quot;project&quot;: &quot;p&quot;})
+    bad = tok[:-1] + (&quot;0&quot; if tok[-1] != &quot;0&quot; else &quot;1&quot;)
+    assert session.verify_delete_token(bad, {&quot;project&quot;: &quot;p&quot;}) is False
+
+
+def test_delete_token_rejects_garbage():
+    assert session.verify_delete_token(&quot;not-a-token&quot;, {&quot;project&quot;: &quot;p&quot;}) is False
+
+
+def test_delete_token_rejects_expired(monkeypatch):
+    old = int(time.time()) - session.DELETE_TOKEN_TTL - 10
+    monkeypatch.setattr(time, &quot;time&quot;, lambda: old)
+    tok = session.make_delete_token({&quot;project&quot;: &quot;p&quot;})
+    monkeypatch.undo()
+    assert session.verify_delete_token(tok, {&quot;project&quot;: &quot;p&quot;}) is False
+</code></pre>
+<ul>
+<li class="task">&#9744; <strong>Step 2: Run tests to verify they fail</strong></li>
+</ul>
+<p>Run: <code>.venv/bin/pytest tests/test_session.py -v -k delete_token</code>
+Expected: FAIL — <code>AttributeError: module 'backend.session' has no attribute 'make_delete_token'</code></p>
+<ul>
+<li class="task">&#9744; <strong>Step 3: Write the implementation</strong></li>
+</ul>
+<p>In <code>backend/session.py</code>, add this block at the end of the file:</p>
+<pre><code class="language-python">DELETE_TOKEN_TTL = 300  # seconds — a confirm token is good for 5 minutes
+
+
+def _canonical_filters(filters: dict) -&gt; str:
+    &quot;&quot;&quot;Stable string for the active (non-empty) filter values, sorted by key.
+    `confirm_token` is excluded so a confirm request body produces the same
+    canonical form as its preview request.&quot;&quot;&quot;
+    items = sorted(
+        (k, str(v).strip())
+        for k, v in filters.items()
+        if k != &quot;confirm_token&quot; and str(v).strip()
+    )
+    return &quot;&amp;&quot;.join(f&quot;{k}={v}&quot; for k, v in items)
+
+
+def make_delete_token(filters: dict) -&gt; str:
+    &quot;&quot;&quot;HMAC token binding a delete to its exact filter set, format
+    &lt;issued_at&gt;.&lt;hmac&gt;.&quot;&quot;&quot;
+    issued_at = int(time.time())
+    payload = f&quot;{issued_at}.{_canonical_filters(filters)}&quot;
+    sig = hmac.new(_secret(), payload.encode(&quot;utf-8&quot;), hashlib.sha256).hexdigest()
+    return f&quot;{issued_at}.{sig}&quot;
+
+
+def verify_delete_token(token: str, filters: dict) -&gt; bool:
+    &quot;&quot;&quot;True iff `token` was minted for this filter set within the TTL.&quot;&quot;&quot;
+    parts = token.split(&quot;.&quot;)
+    if len(parts) != 2:
+        return False
+    raw_ts, sig = parts
+    try:
+        issued_at = int(raw_ts)
+    except ValueError:
+        return False
+    now = int(time.time())
+    if issued_at &gt; now + 60 or now - issued_at &gt; DELETE_TOKEN_TTL:
+        return False
+    payload = f&quot;{issued_at}.{_canonical_filters(filters)}&quot;
+    expected = hmac.new(_secret(), payload.encode(&quot;utf-8&quot;), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, sig)
+</code></pre>
+<ul>
+<li class="task">&#9744; <strong>Step 4: Run tests to verify they pass</strong></li>
+</ul>
+<p>Run: <code>.venv/bin/pytest tests/test_session.py -v</code>
+Expected: PASS</p>
+<ul>
+<li class="task">&#9744; <strong>Step 5: Commit</strong></li>
+</ul>
+<pre><code class="language-bash">git add backend/session.py tests/test_session.py
+git commit -m &quot;feat: HMAC delete confirm-token mint/verify&quot;
+</code></pre>
+<hr />
+<h2>Task 6: <code>POST /api/delete</code> + <code>GET /api/whoami</code></h2>
+<p><strong>Files:</strong>
+- Modify: <code>backend/api.py</code>
+- Test: <code>tests/test_app.py</code></p>
+<ul>
+<li class="task">&#9744; <strong>Step 1: Write the failing tests</strong></li>
+</ul>
+<p>In <code>tests/test_app.py</code>, change the top imports from <code>from fastapi.testclient import TestClient</code> / <code>from backend.app import app</code> to also import the backend modules — the import block becomes:</p>
+<pre><code class="language-python">import io
+from fastapi.testclient import TestClient
+from backend.app import app
+from backend import docs_repo, session
+
+KEY = {&quot;x-docs-key&quot;: &quot;test-api-key&quot;}
+</code></pre>
+<p>Then append this helper and the tests to <code>tests/test_app.py</code>:</p>
+<pre><code class="language-python">def _publish(c, slug, project=&quot;p&quot;, author=&quot;analyst&quot;, tags=&quot;&quot;, body=b&quot;&lt;h1&gt;x&lt;/h1&gt;&quot;):
+    return c.post(&quot;/api/publish&quot;,
+                  data={&quot;slug&quot;: slug, &quot;title&quot;: slug, &quot;tags&quot;: tags,
+                        &quot;project&quot;: project, &quot;from&quot;: author},
+                  files={&quot;file&quot;: (&quot;d.html&quot;, body, &quot;text/html&quot;)}, headers=KEY)
+
+
+def test_delete_requires_a_filter():
+    r = _client().post(&quot;/api/delete&quot;, json={}, headers=KEY)
+    assert r.status_code == 400
+
+
+def test_delete_requires_auth():
+    r = _client().post(&quot;/api/delete&quot;, json={&quot;project&quot;: &quot;analyst&quot;})
+    assert r.status_code == 401
+
+
+def test_delete_preview_then_confirm():
+    c = _client()
+    _publish(c, &quot;analyst/d1&quot;, project=&quot;analyst&quot;)
+    _publish(c, &quot;analyst/d2&quot;, project=&quot;analyst&quot;)
+    prev = c.post(&quot;/api/delete&quot;, json={&quot;project&quot;: &quot;analyst&quot;}, headers=KEY)
+    assert prev.status_code == 200, prev.text
+    pj = prev.json()
+    assert pj[&quot;preview&quot;] is True and pj[&quot;count&quot;] == 2
+    assert docs_repo.get_latest(&quot;analyst/d1&quot;) is not None  # preview deletes nothing
+    conf = c.post(&quot;/api/delete&quot;,
+                  json={&quot;project&quot;: &quot;analyst&quot;, &quot;confirm_token&quot;: pj[&quot;confirm_token&quot;]},
+                  headers=KEY)
+    assert conf.status_code == 200, conf.text
+    cj = conf.json()
+    assert cj[&quot;preview&quot;] is False and cj[&quot;deleted&quot;] == 2
+    assert docs_repo.get_latest(&quot;analyst/d1&quot;) is None
+
+
+def test_delete_bad_token_rejected():
+    c = _client()
+    _publish(c, &quot;analyst/d1&quot;, project=&quot;analyst&quot;)
+    r = c.post(&quot;/api/delete&quot;,
+               json={&quot;project&quot;: &quot;analyst&quot;, &quot;confirm_token&quot;: &quot;1.deadbeef&quot;},
+               headers=KEY)
+    assert r.status_code == 409
+    assert docs_repo.get_latest(&quot;analyst/d1&quot;) is not None
+
+
+def test_delete_token_bound_to_filters():
+    c = _client()
+    _publish(c, &quot;analyst/d1&quot;, project=&quot;analyst&quot;)
+    _publish(c, &quot;beta/d2&quot;, project=&quot;beta&quot;)
+    prev = c.post(&quot;/api/delete&quot;, json={&quot;project&quot;: &quot;analyst&quot;}, headers=KEY)
+    token = prev.json()[&quot;confirm_token&quot;]
+    # token from project=analyst must not confirm a project=beta delete
+    r = c.post(&quot;/api/delete&quot;,
+               json={&quot;project&quot;: &quot;beta&quot;, &quot;confirm_token&quot;: token}, headers=KEY)
+    assert r.status_code == 409
+
+
+def test_delete_accepts_human_cookie():
+    c = _client()
+    _publish(c, &quot;analyst/d1&quot;, project=&quot;analyst&quot;)
+    c.cookies.set(&quot;session&quot;, session.make_session_token(1))
+    r = c.post(&quot;/api/delete&quot;, json={&quot;project&quot;: &quot;analyst&quot;})
+    assert r.status_code == 200
+    assert r.json()[&quot;preview&quot;] is True
+
+
+def test_whoami_agent():
+    r = _client().get(&quot;/api/whoami&quot;, headers=KEY)
+    assert r.status_code == 200
+    body = r.json()
+    assert body[&quot;ok&quot;] is True and body[&quot;principal&quot;] == &quot;agent&quot;
+</code></pre>
+<ul>
+<li class="task">&#9744; <strong>Step 2: Run tests to verify they fail</strong></li>
+</ul>
+<p>Run: <code>.venv/bin/pytest tests/test_app.py -v -k "delete or whoami"</code>
+Expected: FAIL — <code>/api/delete</code> and <code>/api/whoami</code> return 404 (routes not defined)</p>
+<ul>
+<li class="task">&#9744; <strong>Step 3: Write the implementation</strong></li>
+</ul>
+<p>In <code>backend/api.py</code>, change the FastAPI import line to include <code>Body</code>:</p>
+<pre><code class="language-python">from fastapi import APIRouter, Body, Form, Request, UploadFile
+</code></pre>
+<p>Add <code>session</code> to the existing backend import line so it reads:</p>
+<pre><code class="language-python">from backend import docs_repo, session
+</code></pre>
+<p>Then append these two routes to the end of <code>backend/api.py</code>:</p>
+<pre><code class="language-python">_FILTER_KEYS = (&quot;slug&quot;, &quot;project&quot;, &quot;author&quot;, &quot;tag&quot;, &quot;q&quot;,
+                &quot;updated_before&quot;, &quot;updated_after&quot;)
+
+
+@router.post(&quot;/delete&quot;)
+async def delete(request: Request,
+                 body: dict = Body(default={})) -&gt; JSONResponse:
+    &quot;&quot;&quot;Delete whole docs by filter. Two-step: a call with no `confirm_token`
+    previews and returns a token; a call echoing a valid token executes.
+    Accepts the agent API key or a human session cookie (the middleware has
+    already admitted one of the two).&quot;&quot;&quot;
+    filters = {
+        k: str(body[k]).strip()
+        for k in _FILTER_KEYS
+        if body.get(k) is not None and str(body[k]).strip()
+    }
+    if not filters:
+        return JSONResponse({&quot;ok&quot;: False, &quot;error&quot;: &quot;at least one filter required&quot;},
+                            status_code=400)
+    matched = docs_repo.find_docs(filters)
+    token = body.get(&quot;confirm_token&quot;)
+    if not token:
+        return JSONResponse({
+            &quot;ok&quot;: True, &quot;preview&quot;: True, &quot;count&quot;: len(matched),
+            &quot;matched&quot;: matched,
+            &quot;confirm_token&quot;: session.make_delete_token(filters),
+        })
+    if not session.verify_delete_token(str(token), filters):
+        return JSONResponse(
+            {&quot;ok&quot;: False, &quot;error&quot;: &quot;confirm token invalid or expired&quot;},
+            status_code=409)
+    deleted = docs_repo.delete_docs([m[&quot;slug&quot;] for m in matched])
+    return JSONResponse({&quot;ok&quot;: True, &quot;preview&quot;: False, &quot;deleted&quot;: deleted})
+
+
+@router.get(&quot;/whoami&quot;)
+async def whoami(request: Request) -&gt; JSONResponse:
+    &quot;&quot;&quot;Identify the current principal for the SPA top bar.&quot;&quot;&quot;
+    return JSONResponse({
+        &quot;ok&quot;: True,
+        &quot;principal&quot;: request.state.principal,
+        &quot;user_id&quot;: request.state.user_id,
+    })
+</code></pre>
+<ul>
+<li class="task">&#9744; <strong>Step 4: Run tests to verify they pass</strong></li>
+</ul>
+<p>Run: <code>.venv/bin/pytest tests/test_app.py -v</code>
+Expected: PASS (all app tests, including the pre-existing ones)</p>
+<ul>
+<li class="task">&#9744; <strong>Step 5: Commit</strong></li>
+</ul>
+<pre><code class="language-bash">git add backend/api.py tests/test_app.py
+git commit -m &quot;feat: POST /api/delete (filtered, two-step) and GET /api/whoami&quot;
+</code></pre>
+<hr />
+<h2>Task 7: Apply <code>docs.zip</code> into <code>public/</code></h2>
+<p><strong>Files:</strong>
+- Create: <code>public/index.html</code>, <code>public/app.js</code>, <code>public/styles.css</code> (extracted from <code>docs.zip</code>)
+- Delete: <code>docs.zip</code></p>
+<p>This task places the SPA files. <code>app.js</code> is rewired to live data in Task 9; between this task and Task 9 the SPA is not yet functional, which is expected.</p>
+<ul>
+<li class="task">&#9744; <strong>Step 1: Extract the archive into <code>public/</code></strong></li>
+</ul>
+<p>Run from the repo root:</p>
+<pre><code class="language-bash">unzip -o docs.zip -d public/
+mv &quot;public/Docs Hub.html&quot; public/index.html
+rm public/data.js
+ls public/
+</code></pre>
+<p>Expected <code>ls</code> output: <code>app.js  index.html  styles.css</code></p>
+<ul>
+<li class="task">&#9744; <strong>Step 2: Remove the <code>data.js</code> script tag from <code>public/index.html</code></strong></li>
+</ul>
+<p>In <code>public/index.html</code>, delete this line (it loads the now-removed mock data file):</p>
+<pre><code class="language-html">  &lt;script src=&quot;data.js&quot;&gt;&lt;/script&gt;
+</code></pre>
+<p>Leave the <code>&lt;script src="app.js"&gt;&lt;/script&gt;</code> line and everything else intact.</p>
+<ul>
+<li class="task">&#9744; <strong>Step 3: Delete the archive</strong></li>
+</ul>
+<pre><code class="language-bash">rm docs.zip
+</code></pre>
+<ul>
+<li class="task">&#9744; <strong>Step 4: Verify</strong></li>
+</ul>
+<p>Run: <code>git status --short</code>
+Expected: <code>docs.zip</code> no longer listed; <code>public/index.html</code>, <code>public/app.js</code>, <code>public/styles.css</code> shown as new files.</p>
+<ul>
+<li class="task">&#9744; <strong>Step 5: Commit</strong></li>
+</ul>
+<pre><code class="language-bash">git add public/ docs.zip
+git commit -m &quot;feat: apply docs.zip SPA files into public/&quot;
+</code></pre>
+<p>(<code>git add docs.zip</code> stages its deletion.)</p>
+<hr />
+<h2>Task 8: Mount the SPA; drop the server-rendered index</h2>
+<p><strong>Files:</strong>
+- Modify: <code>backend/app.py</code>
+- Modify: <code>backend/views.py</code>
+- Test: <code>tests/test_app.py</code></p>
+<ul>
+<li class="task">&#9744; <strong>Step 1: Write the failing tests</strong></li>
+</ul>
+<p>Append to <code>tests/test_app.py</code>:</p>
+<pre><code class="language-python">def test_root_serves_spa_when_authed():
+    c = _client()
+    c.cookies.set(&quot;session&quot;, session.make_session_token(1))
+    r = c.get(&quot;/&quot;)
+    assert r.status_code == 200
+    assert '&lt;div id=&quot;app&quot;' in r.text
+
+
+def test_static_assets_served_when_authed():
+    c = _client()
+    c.cookies.set(&quot;session&quot;, session.make_session_token(1))
+    assert c.get(&quot;/app.js&quot;).status_code == 200
+    assert c.get(&quot;/styles.css&quot;).status_code == 200
+
+
+def test_doc_render_still_works():
+    c = _client()
+    _publish(c, &quot;analyst/r1&quot;)
+    assert c.get(&quot;/d/analyst/r1&quot;, headers=KEY).content == b&quot;&lt;h1&gt;x&lt;/h1&gt;&quot;
+</code></pre>
+<ul>
+<li class="task">&#9744; <strong>Step 2: Run tests to verify they fail</strong></li>
+</ul>
+<p>Run: <code>.venv/bin/pytest tests/test_app.py -v -k "spa or static_assets"</code>
+Expected: FAIL — <code>/</code> returns the old server-rendered table (no <code>&lt;div id="app"</code>) and <code>/app.js</code> returns 404.</p>
+<ul>
+<li class="task">&#9744; <strong>Step 3: Remove the server-rendered index from <code>views.py</code></strong></li>
+</ul>
+<p>In <code>backend/views.py</code>, delete the <code>import html as _html</code> line, delete the entire <code>_INDEX_HEAD = """..."""</code> string constant, and delete the entire <code>index()</code> function (the <code>@router.get("/")</code> route). Keep <code>render_version</code> and <code>render_latest</code>. The file's imports become:</p>
+<pre><code class="language-python">&quot;&quot;&quot;Browser-facing routes: per-version artifact rendering for the SPA iframe.&quot;&quot;&quot;
+from __future__ import annotations
+
+from fastapi import APIRouter
+from starlette.responses import HTMLResponse, Response
+
+from backend import docs_repo
+
+router = APIRouter()
+</code></pre>
+<ul>
+<li class="task">&#9744; <strong>Step 4: Mount <code>StaticFiles</code> in <code>app.py</code></strong></li>
+</ul>
+<p>In <code>backend/app.py</code>, add the import:</p>
+<pre><code class="language-python">from fastapi.staticfiles import StaticFiles
+</code></pre>
+<p>Then, after the <code>app.include_router(views.router)</code> line and before the <code>@app.get("/health")</code> block, add:</p>
+<pre><code class="language-python">_PUBLIC_DIR = _REPO_ROOT / &quot;public&quot;
+</code></pre>
+<p>And as the <strong>last</strong> statement in the file (after the <code>health()</code> function), add the catch-all mount:</p>
+<pre><code class="language-python">app.mount(&quot;/&quot;, StaticFiles(directory=str(_PUBLIC_DIR), html=True), name=&quot;spa&quot;)
+</code></pre>
+<p>The mount is added last so the <code>/api/*</code>, <code>/d/*</code>, <code>/login</code>, <code>/logout</code>, <code>/health</code> routes resolve first; everything else (the SPA shell and its assets) falls through to <code>StaticFiles</code>. <code>html=True</code> makes <code>GET /</code> serve <code>public/index.html</code>. The existing <code>auth_middleware</code> still runs first, so an unauthenticated <code>GET /</code> is redirected to <code>/login</code> before <code>StaticFiles</code> is reached.</p>
+<ul>
+<li class="task">&#9744; <strong>Step 5: Run tests to verify they pass</strong></li>
+</ul>
+<p>Run: <code>.venv/bin/pytest tests/test_app.py -v</code>
+Expected: PASS — including the pre-existing <code>test_no_auth_redirects_to_login</code> (unauthenticated <code>/</code> still redirects).</p>
+<ul>
+<li class="task">&#9744; <strong>Step 6: Commit</strong></li>
+</ul>
+<pre><code class="language-bash">git add backend/app.py backend/views.py tests/test_app.py
+git commit -m &quot;feat: mount the SPA at / and drop the server-rendered index&quot;
+</code></pre>
+<hr />
+<h2>Task 9: Rewire <code>app.js</code> to live backend data</h2>
+<p><strong>Files:</strong>
+- Modify: <code>backend/public/app.js</code> → fully replaced</p>
+<p>This is a frontend-only change with no pytest coverage; it is verified by the end-to-end smoke test in Task 10. The rewire swaps the mock <code>window.DOCS</code> / <code>window.VERSIONS</code> / <code>window.SAMPLE_ARTIFACT</code> reads for <code>fetch()</code> calls to <code>/api/list</code>, <code>/api/versions/&lt;slug&gt;</code>, and <code>/api/whoami</code>, points the doc-viewer iframe at the server <code>/d/&lt;slug&gt;/v&lt;n&gt;</code> render route, and removes the now-dead in-SPA login screen (auth is handled by the server <code>/login</code> page).</p>
+<ul>
+<li class="task">&#9744; <strong>Step 1: Replace the entire contents of <code>public/app.js</code> with:</strong></li>
+</ul>
+<pre><code class="language-javascript">// docs-hub SPA — hash-routed screens, live backend data.
+// Routes:
+//   #/                  → index
+//   #/d/&lt;slug&gt;          → doc viewer (chrome + iframe)
+//   #/d/&lt;slug&gt;/v&lt;n&gt;     → doc viewer at specific version
+//   #/d/&lt;slug&gt;/versions → version history
+
+const $ = (sel, root = document) =&gt; root.querySelector(sel);
+const $$ = (sel, root = document) =&gt; [...root.querySelectorAll(sel)];
+
+// ─────────────────────────── data layer ───────────────────────────
+
+let _docs = null;        // cached GET /api/list
+const _versions = {};    // slug → GET /api/versions/&lt;slug&gt;
+let _whoami = null;      // cached GET /api/whoami
+
+async function fetchJSON(url) {
+  const r = await fetch(url, { headers: { accept: 'application/json' } });
+  if (!r.ok) throw new Error(url + ' → ' + r.status);
+  return r.json();
+}
+
+async function loadDocs() {
+  if (_docs === null) {
+    const j = await fetchJSON('/api/list');
+    _docs = j.docs || [];
+  }
+  return _docs;
+}
+
+async function loadVersions(slug) {
+  if (!(slug in _versions)) {
+    try {
+      const j = await fetchJSON('/api/versions/' + slug);
+      _versions[slug] = j.versions || [];
+    } catch (e) {
+      _versions[slug] = [];
+    }
+  }
+  return _versions[slug];
+}
+
+async function loadWhoami() {
+  if (_whoami === null) {
+    try { _whoami = await fetchJSON('/api/whoami'); }
+    catch (e) { _whoami = { user_id: null }; }
+  }
+  return _whoami;
+}
+
+// ─────────────────────────── utilities ───────────────────────────
+
+function fmtBytes(n) {
+  if (n &lt; 1024) return n + ' b';
+  if (n &lt; 1024 * 1024) return (n / 1024).toFixed(1) + ' kb';
+  return (n / (1024 * 1024)).toFixed(2) + ' mb';
+}
+
+function relTime(iso) {
+  const t = new Date(iso).getTime();
+  const now = Date.now();
+  const d = Math.max(0, now - t);
+  const mins = d / 60_000;
+  if (mins &lt; 1) return 'just now';
+  if (mins &lt; 60) return Math.round(mins) + 'm ago';
+  const hours = mins / 60;
+  if (hours &lt; 24) return Math.round(hours) + 'h ago';
+  const days = hours / 24;
+  if (days &lt; 14) return Math.round(days) + 'd ago';
+  if (days &lt; 60) return Math.round(days / 7) + 'w ago';
+  return Math.round(days / 30) + 'mo ago';
+}
+
+function absTime(iso) {
+  const d = new Date(iso);
+  const pad = (n) =&gt; String(n).padStart(2, '0');
+  return (
+    d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate()) +
+    ' ' + pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes())
+  );
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/[&amp;&lt;&gt;&quot;']/g, (c) =&gt; ({
+    '&amp;': '&amp;amp;', '&lt;': '&amp;lt;', '&gt;': '&amp;gt;', '&quot;': '&amp;quot;', &quot;'&quot;: '&amp;#39;',
+  })[c]);
+}
+
+function uniq(arr) { return [...new Set(arr)]; }
+
+// ─────────────────────────── filter state ───────────────────────────
+
+const FILTER = {
+  q: '', project: '', agent: '', tag: '',
+  sort: 'updated', sortDir: 'desc',
+};
+
+const SORT_DEFAULT_DIR = {
+  title: 'asc', slug: 'asc', project: 'asc', tags: 'desc',
+  agent: 'asc', updated: 'desc', version: 'desc', size: 'desc',
+};
+
+function setSort(key) {
+  if (FILTER.sort === key) {
+    FILTER.sortDir = FILTER.sortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    FILTER.sort = key;
+    FILTER.sortDir = SORT_DEFAULT_DIR[key] || 'desc';
+  }
+}
+
+function applyFilters(docs) {
+  let out = docs.slice();
+  if (FILTER.q) {
+    const q = FILTER.q.toLowerCase();
+    out = out.filter(
+      (d) =&gt; d.title.toLowerCase().includes(q) || d.slug.toLowerCase().includes(q),
+    );
+  }
+  if (FILTER.project) out = out.filter((d) =&gt; d.project === FILTER.project);
+  if (FILTER.agent)   out = out.filter((d) =&gt; d.posted_by === FILTER.agent);
+  if (FILTER.tag)     out = out.filter((d) =&gt; d.tags.includes(FILTER.tag));
+
+  const dir = FILTER.sortDir === 'asc' ? 1 : -1;
+  const sizeOf = (d) =&gt; d.byte_size ?? 0;
+  const cmp = {
+    title:   (a, b) =&gt; a.title.localeCompare(b.title),
+    slug:    (a, b) =&gt; a.slug.localeCompare(b.slug),
+    project: (a, b) =&gt; (a.project || '').localeCompare(b.project || ''),
+    tags:    (a, b) =&gt; a.tags.length - b.tags.length,
+    agent:   (a, b) =&gt; a.posted_by.localeCompare(b.posted_by),
+    updated: (a, b) =&gt; new Date(a.updated_at) - new Date(b.updated_at),
+    version: (a, b) =&gt; a.latest_version - b.latest_version,
+    size:    (a, b) =&gt; sizeOf(a) - sizeOf(b),
+  }[FILTER.sort] || (() =&gt; 0);
+  out.sort((a, b) =&gt; dir * cmp(a, b));
+  return out;
+}
+
+// ─────────────────────────── screens ───────────────────────────
+
+function renderTopbar(opts = {}) {
+  const crumbs = opts.crumbs || [];
+  const crumbHtml = crumbs.length
+    ? crumbs
+        .map((c, i) =&gt; {
+          const piece = c.href
+            ? `&lt;a href=&quot;${esc(c.href)}&quot;&gt;${esc(c.label)}&lt;/a&gt;`
+            : `&lt;span class=&quot;here&quot;&gt;${esc(c.label)}&lt;/span&gt;`;
+          return (i ? '&lt;span class=&quot;sep&quot;&gt;/&lt;/span&gt;' : '') + piece;
+        })
+        .join('')
+    : '';
+  const who = esc(_whoami &amp;&amp; _whoami.user_id != null ? _whoami.user_id : '—');
+  return `
+    &lt;header class=&quot;topbar&quot;&gt;
+      &lt;a href=&quot;#/&quot; class=&quot;brand&quot; style=&quot;color:inherit&quot;&gt;
+        &lt;span class=&quot;prompt&quot;&gt;$&lt;/span&gt;
+        &lt;span class=&quot;host&quot;&gt;docs.nitjsefni.eu&lt;/span&gt;
+        &lt;span class=&quot;cursor&quot;&gt;&lt;/span&gt;
+      &lt;/a&gt;
+      &lt;div class=&quot;crumbs&quot;&gt;${crumbHtml}&lt;/div&gt;
+      &lt;div class=&quot;meta&quot;&gt;
+        &lt;span&gt;user &lt;span class=&quot;who&quot;&gt;${who}&lt;/span&gt;&lt;/span&gt;
+        &lt;span class=&quot;dot&quot;&gt;·&lt;/span&gt;
+        &lt;a href=&quot;/logout&quot; title=&quot;Sign out&quot;&gt;logout&lt;/a&gt;
+      &lt;/div&gt;
+    &lt;/header&gt;
+  `;
+}
+
+function renderIndex() {
+  const docs = applyFilters(_docs);
+  const total = _docs.length;
+  const allProjects = uniq(_docs.map((d) =&gt; d.project).filter(Boolean)).sort();
+  const allAgents   = uniq(_docs.map((d) =&gt; d.posted_by)).sort();
+  const allTags     = uniq(_docs.flatMap((d) =&gt; d.tags)).sort();
+
+  const opt = (val, label, sel) =&gt;
+    `&lt;option value=&quot;${esc(val)}&quot; ${val === sel ? 'selected' : ''}&gt;${esc(label)}&lt;/option&gt;`;
+
+  const headers = [
+    { key: 'title',   label: 'Title / Slug' },
+    { key: 'project', label: 'Project' },
+    { key: 'tags',    label: 'Tags' },
+    { key: 'agent',   label: 'Agent' },
+    { key: 'updated', label: 'Updated' },
+    { key: 'version', label: 'Ver' },
+    { key: 'size',    label: 'Size', align: 'right' },
+  ];
+
+  const headHtml = headers
+    .map((h) =&gt; {
+      const active = FILTER.sort === h.key;
+      const glyph = active ? (FILTER.sortDir === 'asc' ? '▲' : '▼') : '▼';
+      const cls = active ? '' : 'inactive';
+      const style = h.align === 'right' ? 'text-align:right' : '';
+      const titleAttr = active
+        ? `title=&quot;sort by ${h.label.toLowerCase()} — reverse&quot;`
+        : `title=&quot;sort by ${h.label.toLowerCase()}&quot;`;
+      return `&lt;th class=&quot;${cls}&quot; style=&quot;${style}&quot; ${titleAttr} data-sort=&quot;${h.key}&quot;&gt;${esc(h.label)}&lt;span class=&quot;arrow&quot;&gt;${glyph}&lt;/span&gt;&lt;/th&gt;`;
+    })
+    .join('');
+
+  const rowHtml = docs.length
+    ? docs
+        .map((d) =&gt; {
+          const size = d.byte_size ? fmtBytes(d.byte_size) : '';
+          return `
+            &lt;tr&gt;
+              &lt;td class=&quot;title-cell&quot;&gt;
+                &lt;a class=&quot;t&quot; href=&quot;#/d/${esc(d.slug)}&quot;&gt;${esc(d.title)}&lt;/a&gt;
+                &lt;div class=&quot;slug&quot;&gt;&lt;span class=&quot;prompt&quot;&gt;›&lt;/span&gt;${esc(d.slug)}&lt;/div&gt;
+              &lt;/td&gt;
+              &lt;td class=&quot;proj&quot;&gt;${esc(d.project || '—')}&lt;/td&gt;
+              &lt;td class=&quot;tags&quot;&gt;${d.tags.map((t) =&gt; `&lt;span class=&quot;tag&quot; data-tag=&quot;${esc(t)}&quot;&gt;${esc(t)}&lt;/span&gt;`).join('')}&lt;/td&gt;
+              &lt;td class=&quot;agent&quot;&gt;${esc(d.posted_by)}&lt;/td&gt;
+              &lt;td class=&quot;upd&quot;&gt;
+                &lt;span class=&quot;rel&quot;&gt;${relTime(d.updated_at)}&lt;/span&gt;
+                &lt;span class=&quot;abs&quot;&gt;${absTime(d.updated_at)}&lt;/span&gt;
+              &lt;/td&gt;
+              &lt;td class=&quot;ver&quot;&gt;
+                &lt;a class=&quot;v&quot; href=&quot;#/d/${esc(d.slug)}&quot;&gt;v${d.latest_version}&lt;/a&gt;
+                &lt;a class=&quot;hist&quot; href=&quot;#/d/${esc(d.slug)}/versions&quot; title=&quot;version history&quot;&gt;log →&lt;/a&gt;
+              &lt;/td&gt;
+              &lt;td class=&quot;size tnum&quot;&gt;${size}&lt;/td&gt;
+            &lt;/tr&gt;
+          `;
+        })
+        .join('')
+    : `&lt;tr class=&quot;empty&quot;&gt;&lt;td colspan=&quot;${headers.length}&quot;&gt;no docs match these filters · &lt;a href=&quot;#&quot; id=&quot;clear-filters&quot;&gt;clear all&lt;/a&gt;&lt;/td&gt;&lt;/tr&gt;`;
+
+  return `
+    ${renderTopbar({ crumbs: [{ label: 'index' }] })}
+    &lt;main class=&quot;main&quot;&gt;
+      &lt;div class=&quot;filterbar&quot;&gt;
+        &lt;div class=&quot;field&quot;&gt;
+          &lt;span class=&quot;label&quot;&gt;search&lt;/span&gt;
+          &lt;input id=&quot;f-q&quot; placeholder=&quot;title or slug…&quot; value=&quot;${esc(FILTER.q)}&quot; autocomplete=&quot;off&quot;&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;field select&quot;&gt;
+          &lt;span class=&quot;label&quot;&gt;project&lt;/span&gt;
+          &lt;select id=&quot;f-project&quot;&gt;
+            &lt;option value=&quot;&quot;&gt;all&lt;/option&gt;
+            ${allProjects.map((p) =&gt; opt(p, p, FILTER.project)).join('')}
+          &lt;/select&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;field select&quot;&gt;
+          &lt;span class=&quot;label&quot;&gt;agent&lt;/span&gt;
+          &lt;select id=&quot;f-agent&quot;&gt;
+            &lt;option value=&quot;&quot;&gt;all&lt;/option&gt;
+            ${allAgents.map((a) =&gt; opt(a, a, FILTER.agent)).join('')}
+          &lt;/select&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;field select&quot;&gt;
+          &lt;span class=&quot;label&quot;&gt;tag&lt;/span&gt;
+          &lt;select id=&quot;f-tag&quot;&gt;
+            &lt;option value=&quot;&quot;&gt;all&lt;/option&gt;
+            ${allTags.map((t) =&gt; opt(t, '#' + t, FILTER.tag)).join('')}
+          &lt;/select&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;count&quot;&gt;&lt;b class=&quot;accent&quot;&gt;${docs.length}&lt;/b&gt; / ${total} docs&lt;/div&gt;
+      &lt;/div&gt;
+      &lt;table class=&quot;docs-table&quot;&gt;
+        &lt;thead&gt;&lt;tr&gt;${headHtml}&lt;/tr&gt;&lt;/thead&gt;
+        &lt;tbody&gt;${rowHtml}&lt;/tbody&gt;
+      &lt;/table&gt;
+    &lt;/main&gt;
+  `;
+}
+
+function wireIndex() {
+  const reroute = () =&gt; render();
+  $('#f-q')?.addEventListener('input', (e) =&gt; { FILTER.q = e.target.value; reroute(); });
+  $('#f-project')?.addEventListener('change', (e) =&gt; { FILTER.project = e.target.value; reroute(); });
+  $('#f-agent')?.addEventListener('change', (e) =&gt; { FILTER.agent = e.target.value; reroute(); });
+  $('#f-tag')?.addEventListener('change', (e) =&gt; { FILTER.tag = e.target.value; reroute(); });
+  $$('[data-sort]').forEach((th) =&gt;
+    th.addEventListener('click', () =&gt; {
+      setSort(th.dataset.sort);
+      reroute();
+    }),
+  );
+  $$('.docs-table .tag[data-tag]').forEach((el) =&gt;
+    el.addEventListener('click', () =&gt; {
+      FILTER.tag = FILTER.tag === el.dataset.tag ? '' : el.dataset.tag;
+      reroute();
+    }),
+  );
+  $('#clear-filters')?.addEventListener('click', (e) =&gt; {
+    e.preventDefault();
+    Object.assign(FILTER, { q: '', project: '', agent: '', tag: '' });
+    reroute();
+  });
+  if (FILTER.q) {
+    const inp = $('#f-q');
+    if (inp) {
+      inp.focus();
+      inp.setSelectionRange(inp.value.length, inp.value.length);
+    }
+  }
+}
+
+function renderDocViewer(slug, requestedVersion) {
+  const doc = (_docs || []).find((d) =&gt; d.slug === slug);
+  if (!doc) return renderNotFound('/d/' + slug);
+
+  const versions = _versions[slug] || [];
+  const latest = doc.latest_version;
+  const ver = requestedVersion ?? latest;
+  const v = versions.find((x) =&gt; x.version === ver);
+  if (!v) return renderNotFound('/d/' + slug + '/v' + ver);
+
+  const isStale = ver !== latest;
+  const idx = versions.findIndex((x) =&gt; x.version === ver);
+  const newer = versions[idx - 1];
+  const older = versions[idx + 1];
+
+  const crumbs = [
+    { label: 'index', href: '#/' },
+    { label: doc.project || '—' },
+    { label: slug.split('/').slice(1).join('/') || slug, href: '#/d/' + slug },
+  ];
+
+  return `
+    ${renderTopbar({ crumbs })}
+    &lt;div class=&quot;docview&quot;&gt;
+      &lt;div class=&quot;docchrome&quot;&gt;
+        &lt;div class=&quot;left&quot;&gt;
+          &lt;div class=&quot;title-row&quot;&gt;
+            &lt;div class=&quot;title&quot;&gt;${esc(doc.title)}&lt;/div&gt;
+            &lt;div class=&quot;vtag ${isStale ? 'stale stale-warn' : ''}&quot;&gt;v${v.version}&lt;/div&gt;
+          &lt;/div&gt;
+          &lt;div class=&quot;meta&quot;&gt;
+            &lt;span class=&quot;slug&quot;&gt;&lt;span class=&quot;prompt&quot;&gt;›&lt;/span&gt;${esc(slug)}&lt;/span&gt;
+            &lt;span class=&quot;dot&quot;&gt;·&lt;/span&gt;
+            &lt;span&gt;by &lt;span class=&quot;agent&quot;&gt;${esc(v.posted_by)}&lt;/span&gt;&lt;/span&gt;
+            &lt;span class=&quot;dot&quot;&gt;·&lt;/span&gt;
+            &lt;span&gt;${relTime(v.created_at)} · ${absTime(v.created_at)}&lt;/span&gt;
+            &lt;span class=&quot;dot&quot;&gt;·&lt;/span&gt;
+            &lt;span&gt;${fmtBytes(v.byte_size)}&lt;/span&gt;
+            &lt;span class=&quot;dot&quot;&gt;·&lt;/span&gt;
+            &lt;span title=&quot;${esc(v.sha256)}&quot;&gt;sha ${esc(v.sha256.slice(0, 10))}…&lt;/span&gt;
+          &lt;/div&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;actions&quot;&gt;
+          &lt;div class=&quot;nav-arrows&quot;&gt;
+            &lt;button ${older ? `onclick=&quot;location.hash='#/d/${esc(slug)}/v${older.version}'&quot;` : 'disabled'} title=&quot;older version&quot;&gt;←&lt;/button&gt;
+            &lt;span class=&quot;which&quot;&gt;v${v.version} / v${latest}&lt;/span&gt;
+            &lt;button ${newer ? `onclick=&quot;location.hash='#/d/${esc(slug)}/v${newer.version}'&quot;` : 'disabled'} title=&quot;newer version&quot;&gt;→&lt;/button&gt;
+          &lt;/div&gt;
+          ${isStale ? `&lt;a class=&quot;btn accent&quot; href=&quot;#/d/${esc(slug)}&quot;&gt;latest →&lt;/a&gt;` : ''}
+          &lt;a class=&quot;btn&quot; href=&quot;#/d/${esc(slug)}/versions&quot;&gt;log &lt;span class=&quot;kbd&quot;&gt;L&lt;/span&gt;&lt;/a&gt;
+          &lt;button class=&quot;btn&quot; id=&quot;copy-link&quot; title=&quot;copy permalink&quot;&gt;⎘ link&lt;/button&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+      &lt;div class=&quot;artifact-frame&quot;&gt;
+        &lt;iframe id=&quot;artifact&quot; sandbox=&quot;allow-same-origin&quot; src=&quot;/d/${esc(slug)}/v${v.version}&quot;&gt;&lt;/iframe&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+  `;
+}
+
+function wireDocViewer() {
+  $('#copy-link')?.addEventListener('click', (e) =&gt; {
+    const btn = e.currentTarget;
+    const url = location.href;
+    if (navigator.clipboard) navigator.clipboard.writeText(url).catch(() =&gt; {});
+    const old = btn.innerHTML;
+    btn.innerHTML = '✓ copied';
+    setTimeout(() =&gt; (btn.innerHTML = old), 1200);
+  });
+  document.addEventListener('keydown', _docKeydown);
+}
+const _docKeydown = (e) =&gt; {
+  if (e.target.matches('input, textarea, select')) return;
+  if (e.key === 'l' || e.key === 'L') {
+    const m = location.hash.match(/^#\/d\/(.+?)(?:\/v\d+|\/versions)?$/);
+    if (m) location.hash = '#/d/' + m[1] + '/versions';
+  }
+};
+
+function renderVersions(slug) {
+  const doc = (_docs || []).find((d) =&gt; d.slug === slug);
+  if (!doc) return renderNotFound('/d/' + slug + '/versions');
+  const versions = _versions[slug] || [];
+  const latest = doc.latest_version;
+
+  const crumbs = [
+    { label: 'index', href: '#/' },
+    { label: doc.project || '—' },
+    { label: slug.split('/').slice(1).join('/') || slug, href: '#/d/' + slug },
+    { label: 'versions' },
+  ];
+
+  const rows = versions
+    .map(
+      (v) =&gt; `
+      &lt;div class=&quot;version-row&quot; data-href=&quot;#/d/${esc(slug)}/v${v.version}&quot;&gt;
+        &lt;div class=&quot;vtag ${v.version === latest ? 'latest' : ''}&quot;&gt;v${v.version}&lt;/div&gt;
+        &lt;div&gt;
+          &lt;div class=&quot;who&quot;&gt;${esc(v.posted_by)}&lt;/div&gt;
+          &lt;div class=&quot;sha&quot; title=&quot;${esc(v.sha256)}&quot;&gt;sha ${esc(v.sha256.slice(0, 16))}…&lt;/div&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;when&quot;&gt;
+          ${relTime(v.created_at)}
+          &lt;span class=&quot;abs&quot;&gt;${absTime(v.created_at)}&lt;/span&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;size tnum&quot;&gt;${fmtBytes(v.byte_size)}&lt;/div&gt;
+        &lt;div class=&quot;sha tnum&quot;&gt;${esc(v.sha256.slice(0, 8))}&lt;/div&gt;
+        &lt;div class=&quot;actions&quot;&gt;
+          &lt;button class=&quot;render-btn&quot;&gt;render →&lt;/button&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+    `,
+    )
+    .join('');
+
+  return `
+    ${renderTopbar({ crumbs })}
+    &lt;main class=&quot;main&quot;&gt;
+      &lt;div class=&quot;version-head&quot;&gt;
+        &lt;div&gt;
+          &lt;h1&gt;${esc(doc.title)}&lt;/h1&gt;
+          &lt;div class=&quot;sub&quot;&gt;&lt;span class=&quot;prompt&quot;&gt;›&lt;/span&gt;${esc(slug)} · ${versions.length} version${versions.length === 1 ? '' : 's'}&lt;/div&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;version-actions&quot;&gt;
+          &lt;a class=&quot;btn&quot; href=&quot;#/d/${esc(slug)}&quot;&gt;view latest →&lt;/a&gt;
+          &lt;a class=&quot;btn&quot; href=&quot;#/&quot;&gt;← back to index&lt;/a&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+      &lt;div class=&quot;version-list&quot;&gt;${rows}&lt;/div&gt;
+    &lt;/main&gt;
+  `;
+}
+
+function wireVersions() {
+  $$('.version-row').forEach((row) =&gt;
+    row.addEventListener('click', () =&gt; {
+      location.hash = row.dataset.href;
+    }),
+  );
+}
+
+function renderNotFound(path) {
+  return `
+    ${renderTopbar({ crumbs: [{ label: '404' }] })}
+    &lt;div class=&quot;notfound&quot;&gt;
+      &lt;div&gt;
+        &lt;div class=&quot;code&quot;&gt;4&lt;span class=&quot;slash&quot;&gt;/&lt;/span&gt;4&lt;/div&gt;
+        &lt;div class=&quot;path&quot;&gt;&lt;span class=&quot;prompt&quot;&gt;›&lt;/span&gt;${esc(path || location.hash.slice(1) || '/')}&lt;/div&gt;
+        &lt;h2&gt;No artifact under that slug.&lt;/h2&gt;
+        &lt;p&gt;The slug doesn't resolve to any published document, or that specific version doesn't exist yet. Re-publish from the agent CLI, or pick a different slug from the index.&lt;/p&gt;
+        &lt;div class=&quot;actions&quot;&gt;
+          &lt;a class=&quot;btn accent&quot; href=&quot;#/&quot;&gt;← back to index&lt;/a&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+  `;
+}
+
+function renderError(err) {
+  return `
+    ${renderTopbar({ crumbs: [{ label: 'error' }] })}
+    &lt;div class=&quot;notfound&quot;&gt;
+      &lt;div&gt;
+        &lt;div class=&quot;code&quot;&gt;5&lt;span class=&quot;slash&quot;&gt;/&lt;/span&gt;0&lt;span class=&quot;slash&quot;&gt;/&lt;/span&gt;0&lt;/div&gt;
+        &lt;h2&gt;Couldn't load from the server.&lt;/h2&gt;
+        &lt;p&gt;${esc(String((err &amp;&amp; err.message) || err))}&lt;/p&gt;
+        &lt;div class=&quot;actions&quot;&gt;
+          &lt;a class=&quot;btn accent&quot; href=&quot;#/&quot;&gt;← back to index&lt;/a&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+  `;
+}
+
+// ─────────────────────────── router ───────────────────────────
+
+function parseRoute() {
+  const h = location.hash.replace(/^#/, '') || '/';
+  if (h === '/' || h === '') return { name: 'index' };
+  if (h === '/404') return { name: '404' };
+  let m = h.match(/^\/d\/(.+?)\/versions$/);
+  if (m) return { name: 'versions', slug: m[1] };
+  m = h.match(/^\/d\/(.+?)\/v(\d+)$/);
+  if (m) return { name: 'viewer', slug: m[1], version: Number(m[2]) };
+  m = h.match(/^\/d\/(.+)$/);
+  if (m) return { name: 'viewer', slug: m[1], version: null };
+  return { name: '404' };
+}
+
+async function render() {
+  document.removeEventListener('keydown', _docKeydown);
+  const route = parseRoute();
+  const root = $('#app');
+  let html = '';
+  try {
+    await loadWhoami();
+    if (route.name === 'index') {
+      await loadDocs();
+      html = renderIndex();
+    } else if (route.name === 'versions') {
+      await loadDocs();
+      await loadVersions(route.slug);
+      html = renderVersions(route.slug);
+    } else if (route.name === 'viewer') {
+      await loadDocs();
+      await loadVersions(route.slug);
+      html = renderDocViewer(route.slug, route.version);
+    } else {
+      html = renderNotFound();
+    }
+  } catch (e) {
+    html = renderError(e);
+  }
+  root.innerHTML = html;
+  switch (route.name) {
+    case 'index':    wireIndex(); break;
+    case 'versions': wireVersions(); break;
+    case 'viewer':   wireDocViewer(); break;
+  }
+  document.title =
+    ({
+      index: 'docs.nitjsefni.eu',
+      versions: 'versions · docs',
+      viewer: (route.slug || '') + ' · docs',
+      '404': '404 · docs',
+    })[route.name] || 'docs.nitjsefni.eu';
+}
+
+window.addEventListener('hashchange', render);
+window.addEventListener('DOMContentLoaded', render);
+</code></pre>
+<ul>
+<li class="task">&#9744; <strong>Step 2: Commit</strong></li>
+</ul>
+<pre><code class="language-bash">git add public/app.js
+git commit -m &quot;feat: rewire SPA app.js to live backend data&quot;
+</code></pre>
+<hr />
+<h2>Task 10: End-to-end verification</h2>
+<p><strong>Files:</strong> none modified — verification only.</p>
+<ul>
+<li class="task">&#9744; <strong>Step 1: Run the full test suite</strong></li>
+</ul>
+<p>Run: <code>.venv/bin/pytest -v</code>
+Expected: PASS — every test green, no failures or errors.</p>
+<ul>
+<li class="task">&#9744; <strong>Step 2: Confirm the archive is gone</strong></li>
+</ul>
+<p>Run: <code>git status --short &amp;&amp; ls</code>
+Expected: <code>docs.zip</code> is not present in the directory listing and not in git status.</p>
+<ul>
+<li class="task">&#9744; <strong>Step 3: Smoke-test the running server</strong></li>
+</ul>
+<p>Start the app against the dev database (a <code>.env</code> with <code>DATABASE_URL_DOCS</code>, <code>DATABASE_URL_AUTH</code>, <code>STORE_ROOT</code>, <code>SESSION_SECRET</code>, <code>DOCS_HUB_API_KEY</code> is already present):</p>
+<pre><code class="language-bash">.venv/bin/uvicorn backend.app:app --port 8099 &amp;
+sleep 2
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8099/health
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8099/
+</code></pre>
+<p>Expected: <code>/health</code> → <code>200</code>; <code>/</code> → <code>302</code> (redirect to <code>/login</code>, since curl sends no session cookie). Stop the server afterward (<code>kill %1</code>).</p>
+<ul>
+<li class="task">&#9744; <strong>Step 4: Browser check (manual)</strong></li>
+</ul>
+<p>In a browser: open the site, sign in via the server <code>/login</code> page, confirm the SPA index lists real published docs with working search / project / agent / tag filters and column sorting; open a doc and confirm the artifact renders in the iframe; open version history. Then exercise delete: <code>POST /api/delete</code> with a filter (e.g. <code>{"project":"&lt;something&gt;"}</code>) using the API key, confirm the preview returns a <code>confirm_token</code> and a <code>matched</code> list, repeat the call with the token, and confirm the docs disappear from the index and their <code>store/&lt;slug&gt;/</code> directories are gone.</p>
+<ul>
+<li class="task">&#9744; <strong>Step 5: Final commit (if any verification fixes were needed)</strong></li>
+</ul>
+<pre><code class="language-bash">git add -A
+git commit -m &quot;test: end-to-end verification of SPA wiring + filtered delete&quot;
+</code></pre>
+<p>(If Steps 1–4 passed with no changes, skip this commit.)</p>
+<hr />
+<h2>Self-Review Notes</h2>
+<ul>
+<li><strong>Spec coverage:</strong> SPA file placement (T7), static mount + index removal (T8), app.js live-data rewire (T9), <code>byte_size</code> on <code>/api/list</code> (T2), <code>POST /api/delete</code> with all seven filters + dry-run/confirm-token + empty-filter rejection + dual auth (T3/T4/T5/T6), <code>storage.delete_doc</code> (T1), <code>GET /api/whoami</code> (T6), <code>docs.zip</code> deletion (T7). All spec sections map to a task.</li>
+<li><strong>Out of scope (per spec), intentionally absent:</strong> single-version deletion, an in-SPA delete control, server-side index filtering, soft-delete/undo.</li>
+<li><strong>Type consistency:</strong> <code>find_docs</code> returns <code>{slug, title, latest_version}</code> (T3) and <code>delete_docs</code> consumes <code>slug</code> values from it (T4, via the <code>/api/delete</code> handler in T6). <code>make_delete_token</code>/<code>verify_delete_token</code> share <code>_canonical_filters</code> and the <code>DELETE_TOKEN_TTL</code> constant (T5). <code>/api/list</code> rows gain <code>byte_size</code> (T2), consumed by <code>applyFilters</code>/<code>renderIndex</code> in the rewired <code>app.js</code> (T9).</li>
+</ul>
+</main>
+</body>
+</html>
