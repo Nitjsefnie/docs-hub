@@ -90,6 +90,7 @@ async def auth_middleware(request: Request, call_next):
         return JSONResponse({"ok": False, "error": "Unauthorized"}, status_code=401)
     return RedirectResponse("/login", status_code=302)
 
+
 DELETE_TOKEN_TTL = 300  # seconds — a confirm token is good for 5 minutes
 
 
