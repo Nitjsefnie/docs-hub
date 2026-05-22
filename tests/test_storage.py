@@ -26,3 +26,21 @@ def test_store_and_read_blob():
 def test_store_blob_rejects_bad_slug():
     with pytest.raises(ValueError):
         storage.store_blob("../evil", 1, b"x")
+
+
+def test_delete_doc_removes_dir():
+    storage.store_blob("analyst/del", 1, b"<h1>x</h1>")
+    storage.store_blob("analyst/del", 2, b"<h1>y</h1>")
+    root = os.path.join(os.environ["STORE_ROOT"], "analyst", "del")
+    assert os.path.isdir(root)
+    storage.delete_doc("analyst/del")
+    assert not os.path.exists(root)
+
+
+def test_delete_doc_missing_is_noop():
+    storage.delete_doc("analyst/never-stored")  # must not raise
+
+
+def test_delete_doc_rejects_bad_slug():
+    with pytest.raises(ValueError):
+        storage.delete_doc("../evil")

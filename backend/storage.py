@@ -7,6 +7,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import shutil
 
 # slug: lowercase alnum segments joined by '/'; segment chars [a-z0-9_-];
 # each segment starts and ends alphanumeric; no '..', no leading/trailing '/'.
@@ -41,3 +42,11 @@ def store_blob(slug: str, version: int, html: bytes) -> tuple[str, int, str]:
 def read_blob(path: str) -> bytes:
     with open(path, "rb") as f:
         return f.read()
+
+
+def delete_doc(slug: str) -> None:
+    """Remove the blob directory for a slug. No-op if it does not exist."""
+    if not is_valid_slug(slug):
+        raise ValueError(f"invalid slug: {slug!r}")
+    path = os.path.join(_store_root(), slug)
+    shutil.rmtree(path, ignore_errors=True)
