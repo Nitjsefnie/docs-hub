@@ -2,7 +2,7 @@
 key or a human cookie (the middleware already enforced one of the two)."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Form, Request, UploadFile
+from fastapi import APIRouter, Body, Form, Request, UploadFile
 from starlette.responses import HTMLResponse, JSONResponse, Response
 
 from backend import docs_repo, session
@@ -64,3 +64,48 @@ async def api_versions(slug: str) -> JSONResponse:
     for v in vs:
         v["created_at"] = v["created_at"].isoformat()
     return JSONResponse({"ok": True, "slug": slug, "versions": vs})
+
+
+_FILTER_KEYS = ("slug", "project", "author", "tag", "q",
+                "updated_before", "updated_after")
+
+
+@router.post("/delete")
+async def delete(request: Request,
+                 body: dict = Body(default={})) -> JSONResponse:
+    """Delete whole docs by filter. Two-step: a call with no `confirm_token`
+    previews and returns a token; a call echoing a valid token executes.
+    Accepts the agent API key or a human session cookie (the middleware has
+    already admitted one of the two)."""
+    filters = {
+        k: str(body[k]).strip()
+        for k in _FILTER_KEYS
+        if body.get(k) is not None and str(body[k]).strip()
+    }
+    if not filters:
+        return JSONResponse({"ok": False, "error": "at least one filter required"},
+                            status_code=400)
+    matched = docs_repo.find_docs(filters)
+    token = body.get("confirm_token")
+    if not token:
+        return JSONResponse({
+            "ok": True, "preview": True, "count": len(matched),
+            "matched": matched,
+            "confirm_token": session.make_delete_token(filters),
+        })
+    if not session.verify_delete_token(str(token), filters):
+        return JSONResponse(
+            {"ok": False, "error": "confirm token invalid or expired"},
+            status_code=409)
+    deleted = docs_repo.delete_docs([m["slug"] for m in matched])
+    return JSONResponse({"ok": True, "preview": False, "deleted": deleted})
+
+
+@router.get("/whoami")
+async def whoami(request: Request) -> JSONResponse:
+    """Identify the current principal for the SPA top bar."""
+    return JSONResponse({
+        "ok": True,
+        "principal": request.state.principal,
+        "user_id": request.state.user_id,
+    })

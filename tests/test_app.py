@@ -1,6 +1,7 @@
 import io
 from fastapi.testclient import TestClient
 from backend.app import app
+from backend import docs_repo, session
 
 KEY = {"x-docs-key": "test-api-key"}
 
@@ -62,3 +63,76 @@ def test_bad_login_rejected():
     r = c.post("/login", data={"user_id": "999999999", "password": "nope"},
                follow_redirects=False)
     assert r.status_code == 401
+
+
+def _publish(c, slug, project="p", author="analyst", tags="", body=b"<h1>x</h1>"):
+    return c.post("/api/publish",
+                  data={"slug": slug, "title": slug, "tags": tags,
+                        "project": project, "from": author},
+                  files={"file": ("d.html", body, "text/html")}, headers=KEY)
+
+
+def test_delete_requires_a_filter():
+    r = _client().post("/api/delete", json={}, headers=KEY)
+    assert r.status_code == 400
+
+
+def test_delete_requires_auth():
+    r = _client().post("/api/delete", json={"project": "analyst"})
+    assert r.status_code == 401
+
+
+def test_delete_preview_then_confirm():
+    c = _client()
+    _publish(c, "analyst/d1", project="analyst")
+    _publish(c, "analyst/d2", project="analyst")
+    prev = c.post("/api/delete", json={"project": "analyst"}, headers=KEY)
+    assert prev.status_code == 200, prev.text
+    pj = prev.json()
+    assert pj["preview"] is True and pj["count"] == 2
+    assert docs_repo.get_latest("analyst/d1") is not None  # preview deletes nothing
+    conf = c.post("/api/delete",
+                  json={"project": "analyst", "confirm_token": pj["confirm_token"]},
+                  headers=KEY)
+    assert conf.status_code == 200, conf.text
+    cj = conf.json()
+    assert cj["preview"] is False and cj["deleted"] == 2
+    assert docs_repo.get_latest("analyst/d1") is None
+
+
+def test_delete_bad_token_rejected():
+    c = _client()
+    _publish(c, "analyst/d1", project="analyst")
+    r = c.post("/api/delete",
+               json={"project": "analyst", "confirm_token": "1.deadbeef"},
+               headers=KEY)
+    assert r.status_code == 409
+    assert docs_repo.get_latest("analyst/d1") is not None
+
+
+def test_delete_token_bound_to_filters():
+    c = _client()
+    _publish(c, "analyst/d1", project="analyst")
+    _publish(c, "beta/d2", project="beta")
+    prev = c.post("/api/delete", json={"project": "analyst"}, headers=KEY)
+    token = prev.json()["confirm_token"]
+    # token from project=analyst must not confirm a project=beta delete
+    r = c.post("/api/delete",
+               json={"project": "beta", "confirm_token": token}, headers=KEY)
+    assert r.status_code == 409
+
+
+def test_delete_accepts_human_cookie():
+    c = _client()
+    _publish(c, "analyst/d1", project="analyst")
+    c.cookies.set("session", session.make_session_token(1))
+    r = c.post("/api/delete", json={"project": "analyst"})
+    assert r.status_code == 200
+    assert r.json()["preview"] is True
+
+
+def test_whoami_agent():
+    r = _client().get("/api/whoami", headers=KEY)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True and body["principal"] == "agent"
