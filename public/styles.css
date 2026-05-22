@@ -164,6 +164,10 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 0; }
   appearance: none;
 }
 .filterbar .field select { cursor: pointer; padding-right: 14px; }
+.filterbar .field select option {
+  background: var(--elev-2);
+  color: var(--text);
+}
 .filterbar .field.select::after {
   content: "▾";
   color: var(--text-faint);
