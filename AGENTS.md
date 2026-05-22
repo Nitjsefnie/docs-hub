@@ -7,7 +7,7 @@ versions browsable.
 
 ## Status
 
-Design and implementation plan are complete; the server is not yet built.
+Built and deployed — the server is live at `https://docs.nitjsefni.eu`.
 
 - Spec: `docs/superpowers/specs/2026-05-21-docs-hub-design.md`
 - Plan: `docs/superpowers/plans/2026-05-21-docs-hub.md` — 13 TDD tasks
