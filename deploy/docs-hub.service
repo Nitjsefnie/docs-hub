@@ -1,0 +1,11 @@
+[Unit]
+Description=docs-hub (docs.nitjsefni.eu)
+After=network.target postgresql.service
+
+[Service]
+WorkingDirectory=/root/docs-hub
+ExecStart=/root/docs-hub/.venv/bin/uvicorn backend.app:app --host 127.0.0.1 --port 8084
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
