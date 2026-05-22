@@ -1,14 +1,52 @@
-// docs-hub mockup — hash-routed screens.
+// docs-hub SPA — hash-routed screens, live backend data.
 // Routes:
 //   #/                  → index
-//   #/login             → login
 //   #/d/<slug>          → doc viewer (chrome + iframe)
 //   #/d/<slug>/v<n>     → doc viewer at specific version
 //   #/d/<slug>/versions → version history
-//   #/404               → not found
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+
+// ─────────────────────────── data layer ───────────────────────────
+
+let _docs = null;        // cached GET /api/list
+const _versions = {};    // slug → GET /api/versions/<slug>
+let _whoami = null;      // cached GET /api/whoami
+
+async function fetchJSON(url) {
+  const r = await fetch(url, { headers: { accept: 'application/json' } });
+  if (!r.ok) throw new Error(url + ' → ' + r.status);
+  return r.json();
+}
+
+async function loadDocs() {
+  if (_docs === null) {
+    const j = await fetchJSON('/api/list');
+    _docs = j.docs || [];
+  }
+  return _docs;
+}
+
+async function loadVersions(slug) {
+  if (!(slug in _versions)) {
+    try {
+      const j = await fetchJSON('/api/versions/' + slug);
+      _versions[slug] = j.versions || [];
+    } catch (e) {
+      _versions[slug] = [];
+    }
+  }
+  return _versions[slug];
+}
+
+async function loadWhoami() {
+  if (_whoami === null) {
+    try { _whoami = await fetchJSON('/api/whoami'); }
+    catch (e) { _whoami = { user_id: null }; }
+  }
+  return _whoami;
+}
 
 // ─────────────────────────── utilities ───────────────────────────
 
@@ -20,7 +58,7 @@ function fmtBytes(n) {
 
 function relTime(iso) {
   const t = new Date(iso).getTime();
-  const now = new Date('2026-05-22T11:42:00Z').getTime();
+  const now = Date.now();
   const d = Math.max(0, now - t);
   const mins = d / 60_000;
   if (mins < 1) return 'just now';
@@ -37,15 +75,8 @@ function absTime(iso) {
   const d = new Date(iso);
   const pad = (n) => String(n).padStart(2, '0');
   return (
-    d.getUTCFullYear() +
-    '-' +
-    pad(d.getUTCMonth() + 1) +
-    '-' +
-    pad(d.getUTCDate()) +
-    ' ' +
-    pad(d.getUTCHours()) +
-    ':' +
-    pad(d.getUTCMinutes())
+    d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate()) +
+    ' ' + pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes())
   );
 }
 
@@ -60,15 +91,10 @@ function uniq(arr) { return [...new Set(arr)]; }
 // ─────────────────────────── filter state ───────────────────────────
 
 const FILTER = {
-  q: '',
-  project: '',
-  agent: '',
-  tag: '',
-  sort: 'updated',     // updated | title | version
-  sortDir: 'desc',     // desc | asc
+  q: '', project: '', agent: '', tag: '',
+  sort: 'updated', sortDir: 'desc',
 };
 
-// Default direction per key, used when the user picks a new sort field.
 const SORT_DEFAULT_DIR = {
   title: 'asc', slug: 'asc', project: 'asc', tags: 'desc',
   agent: 'asc', updated: 'desc', version: 'desc', size: 'desc',
@@ -88,9 +114,7 @@ function applyFilters(docs) {
   if (FILTER.q) {
     const q = FILTER.q.toLowerCase();
     out = out.filter(
-      (d) =>
-        d.title.toLowerCase().includes(q) ||
-        d.slug.toLowerCase().includes(q),
+      (d) => d.title.toLowerCase().includes(q) || d.slug.toLowerCase().includes(q),
     );
   }
   if (FILTER.project) out = out.filter((d) => d.project === FILTER.project);
@@ -98,7 +122,7 @@ function applyFilters(docs) {
   if (FILTER.tag)     out = out.filter((d) => d.tags.includes(FILTER.tag));
 
   const dir = FILTER.sortDir === 'asc' ? 1 : -1;
-  const sizeOf = (d) => window.VERSIONS[d.slug]?.[0]?.byte_size ?? 0;
+  const sizeOf = (d) => d.byte_size ?? 0;
   const cmp = {
     title:   (a, b) => a.title.localeCompare(b.title),
     slug:    (a, b) => a.slug.localeCompare(b.slug),
@@ -116,7 +140,6 @@ function applyFilters(docs) {
 // ─────────────────────────── screens ───────────────────────────
 
 function renderTopbar(opts = {}) {
-  // crumbs: array of {label, href?}
   const crumbs = opts.crumbs || [];
   const crumbHtml = crumbs.length
     ? crumbs
@@ -128,7 +151,7 @@ function renderTopbar(opts = {}) {
         })
         .join('')
     : '';
-
+  const who = esc(_whoami && _whoami.user_id != null ? _whoami.user_id : '—');
   return `
     <header class="topbar">
       <a href="#/" class="brand" style="color:inherit">
@@ -138,20 +161,20 @@ function renderTopbar(opts = {}) {
       </a>
       <div class="crumbs">${crumbHtml}</div>
       <div class="meta">
-        <span>user <span class="who">19</span></span>
+        <span>user <span class="who">${who}</span></span>
         <span class="dot">·</span>
-        <a href="#/login" title="Sign out">logout</a>
+        <a href="/logout" title="Sign out">logout</a>
       </div>
     </header>
   `;
 }
 
 function renderIndex() {
-  const docs = applyFilters(window.DOCS);
-  const total = window.DOCS.length;
-  const allProjects = uniq(window.DOCS.map((d) => d.project).filter(Boolean)).sort();
-  const allAgents   = uniq(window.DOCS.map((d) => d.posted_by)).sort();
-  const allTags     = uniq(window.DOCS.flatMap((d) => d.tags)).sort();
+  const docs = applyFilters(_docs);
+  const total = _docs.length;
+  const allProjects = uniq(_docs.map((d) => d.project).filter(Boolean)).sort();
+  const allAgents   = uniq(_docs.map((d) => d.posted_by)).sort();
+  const allTags     = uniq(_docs.flatMap((d) => d.tags)).sort();
 
   const opt = (val, label, sel) =>
     `<option value="${esc(val)}" ${val === sel ? 'selected' : ''}>${esc(label)}</option>`;
@@ -182,8 +205,7 @@ function renderIndex() {
   const rowHtml = docs.length
     ? docs
         .map((d) => {
-          const latest = window.VERSIONS[d.slug]?.[0];
-          const size = latest ? fmtBytes(latest.byte_size) : '';
+          const size = d.byte_size ? fmtBytes(d.byte_size) : '';
           return `
             <tr>
               <td class="title-cell">
@@ -270,7 +292,6 @@ function wireIndex() {
     Object.assign(FILTER, { q: '', project: '', agent: '', tag: '' });
     reroute();
   });
-  // Restore focus + caret in the search box so typing feels continuous.
   if (FILTER.q) {
     const inp = $('#f-q');
     if (inp) {
@@ -281,10 +302,10 @@ function wireIndex() {
 }
 
 function renderDocViewer(slug, requestedVersion) {
-  const doc = window.DOCS.find((d) => d.slug === slug);
+  const doc = (_docs || []).find((d) => d.slug === slug);
   if (!doc) return renderNotFound('/d/' + slug);
 
-  const versions = window.VERSIONS[slug] || [];
+  const versions = _versions[slug] || [];
   const latest = doc.latest_version;
   const ver = requestedVersion ?? latest;
   const v = versions.find((x) => x.version === ver);
@@ -334,7 +355,7 @@ function renderDocViewer(slug, requestedVersion) {
         </div>
       </div>
       <div class="artifact-frame">
-        <iframe id="artifact" sandbox="allow-same-origin" srcdoc="${esc(window.SAMPLE_ARTIFACT)}"></iframe>
+        <iframe id="artifact" sandbox="allow-same-origin" src="/d/${esc(slug)}/v${v.version}"></iframe>
       </div>
     </div>
   `;
@@ -360,9 +381,9 @@ const _docKeydown = (e) => {
 };
 
 function renderVersions(slug) {
-  const doc = window.DOCS.find((d) => d.slug === slug);
+  const doc = (_docs || []).find((d) => d.slug === slug);
   if (!doc) return renderNotFound('/d/' + slug + '/versions');
-  const versions = window.VERSIONS[slug] || [];
+  const versions = _versions[slug] || [];
   const latest = doc.latest_version;
 
   const crumbs = [
@@ -421,46 +442,6 @@ function wireVersions() {
   );
 }
 
-function renderLogin() {
-  return `
-    <div class="login-shell">
-      <form class="login-card" id="login-form">
-        <div class="brandline">
-          <span class="prompt">$</span>
-          <span>docs.nitjsefni.eu</span>
-          <span class="cursor"></span>
-        </div>
-        <p class="why">Sign in with your nitjsefni.eu credentials. Same user id and password as the other services on this host.</p>
-        <label for="uid">User ID</label>
-        <input id="uid" name="user_id" inputmode="numeric" pattern="[0-9]+" autocomplete="username" placeholder="19" required>
-        <label for="pw">Password</label>
-        <input id="pw" name="password" type="password" autocomplete="current-password" required>
-        <button class="submit" type="submit">Sign in →</button>
-        <div class="err" id="login-err"></div>
-        <div class="foot">
-          <span>HMAC session · strict cookie</span>
-          <span>5/300s rate limit</span>
-        </div>
-      </form>
-    </div>
-  `;
-}
-
-function wireLogin() {
-  $('#login-form')?.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const uid = $('#uid').value.trim();
-    const pw = $('#pw').value;
-    const err = $('#login-err');
-    if (uid === '19' && pw === 'hunter2') {
-      err.textContent = '';
-      location.hash = '#/';
-    } else {
-      err.textContent = 'Invalid credentials.';
-    }
-  });
-}
-
 function renderNotFound(path) {
   return `
     ${renderTopbar({ crumbs: [{ label: '404' }] })}
@@ -478,12 +459,27 @@ function renderNotFound(path) {
   `;
 }
 
+function renderError(err) {
+  return `
+    ${renderTopbar({ crumbs: [{ label: 'error' }] })}
+    <div class="notfound">
+      <div>
+        <div class="code">5<span class="slash">/</span>0<span class="slash">/</span>0</div>
+        <h2>Couldn't load from the server.</h2>
+        <p>${esc(String((err && err.message) || err))}</p>
+        <div class="actions">
+          <a class="btn accent" href="#/">← back to index</a>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 // ─────────────────────────── router ───────────────────────────
 
 function parseRoute() {
   const h = location.hash.replace(/^#/, '') || '/';
   if (h === '/' || h === '') return { name: 'index' };
-  if (h === '/login') return { name: 'login' };
   if (h === '/404') return { name: '404' };
   let m = h.match(/^\/d\/(.+?)\/versions$/);
   if (m) return { name: 'versions', slug: m[1] };
@@ -494,32 +490,43 @@ function parseRoute() {
   return { name: '404' };
 }
 
-function render() {
+async function render() {
   document.removeEventListener('keydown', _docKeydown);
   const route = parseRoute();
   const root = $('#app');
   let html = '';
-  switch (route.name) {
-    case 'index':    html = renderIndex(); break;
-    case 'login':    html = renderLogin(); break;
-    case 'versions': html = renderVersions(route.slug); break;
-    case 'viewer':   html = renderDocViewer(route.slug, route.version); break;
-    case '404':      html = renderNotFound(); break;
+  try {
+    await loadWhoami();
+    if (route.name === 'index') {
+      await loadDocs();
+      html = renderIndex();
+    } else if (route.name === 'versions') {
+      await loadDocs();
+      await loadVersions(route.slug);
+      html = renderVersions(route.slug);
+    } else if (route.name === 'viewer') {
+      await loadDocs();
+      await loadVersions(route.slug);
+      html = renderDocViewer(route.slug, route.version);
+    } else {
+      html = renderNotFound();
+    }
+  } catch (e) {
+    html = renderError(e);
   }
   root.innerHTML = html;
   switch (route.name) {
     case 'index':    wireIndex(); break;
-    case 'login':    wireLogin(); break;
     case 'versions': wireVersions(); break;
     case 'viewer':   wireDocViewer(); break;
   }
-  document.title = ({
-    index: 'docs.nitjsefni.eu',
-    login: 'sign in · docs',
-    versions: 'versions · docs',
-    viewer: route.slug + ' · docs',
-    '404': '404 · docs',
-  })[route.name];
+  document.title =
+    ({
+      index: 'docs.nitjsefni.eu',
+      versions: 'versions · docs',
+      viewer: (route.slug || '') + ' · docs',
+      '404': '404 · docs',
+    })[route.name] || 'docs.nitjsefni.eu';
 }
 
 window.addEventListener('hashchange', render);
