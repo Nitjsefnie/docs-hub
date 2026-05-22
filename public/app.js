@@ -355,7 +355,7 @@ function renderDocViewer(slug, requestedVersion) {
         </div>
       </div>
       <div class="artifact-frame">
-        <iframe id="artifact" sandbox="allow-same-origin" src="/d/${esc(slug)}/v${v.version}"></iframe>
+        <iframe id="artifact" sandbox="allow-scripts allow-same-origin" src="/d/${esc(slug)}/v${v.version}"></iframe>
       </div>
     </div>
   `;
