@@ -157,3 +157,14 @@ def test_doc_render_still_works():
     c = _client()
     _publish(c, "analyst/r1")
     assert c.get("/d/analyst/r1", headers=KEY).content == b"<h1>x</h1>"
+
+
+def test_index_stamps_asset_mtime():
+    c = _client()
+    c.cookies.set("session", session.make_session_token(1))
+    r = c.get("/")
+    assert r.status_code == 200
+    assert "styles.css?v=" in r.text
+    assert "app.js?v=" in r.text
+    assert 'href="styles.css"' not in r.text
+    assert 'src="app.js"' not in r.text
