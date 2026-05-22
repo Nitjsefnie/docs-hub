@@ -89,3 +89,44 @@ async def auth_middleware(request: Request, call_next):
     if path.startswith("/api/"):
         return JSONResponse({"ok": False, "error": "Unauthorized"}, status_code=401)
     return RedirectResponse("/login", status_code=302)
+
+DELETE_TOKEN_TTL = 300  # seconds — a confirm token is good for 5 minutes
+
+
+def _canonical_filters(filters: dict) -> str:
+    """Stable string for the active (non-empty) filter values, sorted by key.
+    `confirm_token` is excluded so a confirm request body produces the same
+    canonical form as its preview request."""
+    items = sorted(
+        (k, str(v).strip())
+        for k, v in filters.items()
+        if k != "confirm_token" and str(v).strip()
+    )
+    return "&".join(f"{k}={v}" for k, v in items)
+
+
+def make_delete_token(filters: dict) -> str:
+    """HMAC token binding a delete to its exact filter set, format
+    <issued_at>.<hmac>."""
+    issued_at = int(time.time())
+    payload = f"{issued_at}.{_canonical_filters(filters)}"
+    sig = hmac.new(_secret(), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    return f"{issued_at}.{sig}"
+
+
+def verify_delete_token(token: str, filters: dict) -> bool:
+    """True iff `token` was minted for this filter set within the TTL."""
+    parts = token.split(".")
+    if len(parts) != 2:
+        return False
+    raw_ts, sig = parts
+    try:
+        issued_at = int(raw_ts)
+    except ValueError:
+        return False
+    now = int(time.time())
+    if issued_at > now + 60 or now - issued_at > DELETE_TOKEN_TTL:
+        return False
+    payload = f"{issued_at}.{_canonical_filters(filters)}"
+    expected = hmac.new(_secret(), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, sig)
