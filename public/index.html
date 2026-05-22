@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>docs.nitjsefni.eu</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app" class="app"></div>
+
+  <!-- screen labels for comment context -->
+  <script>
+    // Each route gets stamped with a screen label after render.
+    document.addEventListener('readystatechange', () => {
+      const stamp = () => {
+        const r = location.hash.replace(/^#/, '') || '/';
+        const app = document.getElementById('app');
+        if (!app) return;
+        if (r === '/' || r === '') app.setAttribute('data-screen-label', '01 Index');
+        else if (r === '/login') app.setAttribute('data-screen-label', '02 Login');
+        else if (r.match(/\/versions$/)) app.setAttribute('data-screen-label', '03 Version history');
+        else if (r.match(/^\/d\//)) app.setAttribute('data-screen-label', '04 Doc viewer');
+        else app.setAttribute('data-screen-label', '05 Not found');
+      };
+      window.addEventListener('hashchange', stamp);
+      stamp();
+    });
+  </script>
+
+  <script src="app.js"></script>
+</body>
+</html>
