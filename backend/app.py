@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from backend import api, db, login, session, views
 
@@ -24,7 +25,12 @@ app.include_router(login.router)
 app.include_router(api.router)
 app.include_router(views.router)
 
+_PUBLIC_DIR = _REPO_ROOT / "public"
+
 
 @app.get("/health")
 def health() -> dict:
     return {"ok": True}
+
+
+app.mount("/", StaticFiles(directory=str(_PUBLIC_DIR), html=True), name="spa")
