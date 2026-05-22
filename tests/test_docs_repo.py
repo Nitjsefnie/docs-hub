@@ -1,4 +1,5 @@
 # tests/test_docs_repo.py
+import os
 import pytest
 from backend import docs_repo
 
@@ -77,3 +78,26 @@ def test_find_docs_shape():
     docs_repo.publish("a/one", "Alpha One", [], "alpha", "analyst", b"<h1>1</h1>")
     d = docs_repo.find_docs({"project": "alpha"})[0]
     assert set(d) == {"slug", "title", "latest_version"}
+
+
+def test_delete_docs_removes_rows_versions_blobs():
+    docs_repo.publish("a/del", "Del", [], None, "analyst", b"<h1>1</h1>")
+    docs_repo.publish("a/del", "Del", [], None, "analyst", b"<h1>2</h1>")
+    n = docs_repo.delete_docs(["a/del"])
+    assert n == 1
+    assert docs_repo.get_latest("a/del") is None
+    assert docs_repo.list_versions("a/del") == []
+    blob_dir = os.path.join(os.environ["STORE_ROOT"], "a", "del")
+    assert not os.path.exists(blob_dir)
+
+
+def test_delete_docs_unknown_slug_counts_zero():
+    assert docs_repo.delete_docs(["nope/nope"]) == 0
+
+
+def test_delete_docs_partial_set():
+    docs_repo.publish("a/keep", "Keep", [], None, "analyst", b"<h1>k</h1>")
+    docs_repo.publish("a/drop", "Drop", [], None, "analyst", b"<h1>d</h1>")
+    assert docs_repo.delete_docs(["a/drop", "missing/x"]) == 1
+    assert docs_repo.get_latest("a/keep") is not None
+    assert docs_repo.get_latest("a/drop") is None

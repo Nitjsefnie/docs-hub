@@ -145,6 +145,23 @@ def find_docs(filters: dict) -> list[dict]:
     return [{"slug": r[0], "title": r[1], "latest_version": r[2]} for r in rows]
 
 
+def delete_docs(slugs: list[str]) -> int:
+    """Delete the named docs (versions cascade via the doc_versions FK) and
+    their blob directories. Returns the count of doc rows actually deleted.
+    The DB delete commits before blob removal, so a crash leaves orphan
+    blobs (harmless) rather than orphan rows."""
+    deleted = 0
+    for slug in slugs:
+        with db.docs_conn() as c:
+            row = c.execute("DELETE FROM docs WHERE slug=%s RETURNING id",
+                            (slug,)).fetchone()
+            c.commit()
+        if row is not None:
+            deleted += 1
+            storage.delete_doc(slug)
+    return deleted
+
+
 def list_versions(slug: str) -> list[dict]:
     """Version history for a slug, newest first."""
     with db.docs_conn() as c:
