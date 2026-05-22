@@ -78,7 +78,7 @@ def list_docs(project: str | None = None, agent: str | None = None) -> list[dict
     """Newest-updated first. `agent` filters by the poster of the latest version."""
     sql = (
         "SELECT d.slug, d.title, d.tags, d.project, d.updated_at, "
-        "d.latest_version, v.posted_by "
+        "d.latest_version, v.posted_by, v.byte_size "
         "FROM docs d JOIN doc_versions v "
         "ON v.doc_id=d.id AND v.version=d.latest_version"
     )
@@ -96,7 +96,8 @@ def list_docs(project: str | None = None, agent: str | None = None) -> list[dict
         rows = c.execute(sql, params).fetchall()
     return [
         {"slug": r[0], "title": r[1], "tags": r[2], "project": r[3],
-         "updated_at": r[4], "latest_version": r[5], "posted_by": r[6]}
+         "updated_at": r[4], "latest_version": r[5], "posted_by": r[6],
+         "byte_size": r[7]}
         for r in rows
     ]
 

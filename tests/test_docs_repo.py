@@ -46,3 +46,10 @@ def test_list_versions():
 def test_publish_bad_slug_raises():
     with pytest.raises(ValueError):
         docs_repo.publish("../evil", "X", [], None, "analyst", b"x")
+
+
+def test_list_docs_includes_byte_size():
+    body = b"<h1>sized body</h1>"
+    docs_repo.publish("a/sz", "Sized", [], None, "analyst", body)
+    d = docs_repo.list_docs()[0]
+    assert d["byte_size"] == len(body)
