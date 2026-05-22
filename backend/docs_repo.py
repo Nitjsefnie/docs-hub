@@ -102,6 +102,49 @@ def list_docs(project: str | None = None, agent: str | None = None) -> list[dict
     ]
 
 
+def find_docs(filters: dict) -> list[dict]:
+    """Docs matching the AND-combined filter set. Returns
+    [{slug, title, latest_version}], newest-updated first.
+
+    Recognised filter keys (all optional): slug, project, author, tag, q,
+    updated_before, updated_after.
+    """
+    sql = (
+        "SELECT d.slug, d.title, d.latest_version "
+        "FROM docs d JOIN doc_versions v "
+        "ON v.doc_id=d.id AND v.version=d.latest_version"
+    )
+    clauses, params = [], []
+    if filters.get("slug"):
+        clauses.append("d.slug=%s")
+        params.append(filters["slug"])
+    if filters.get("project"):
+        clauses.append("d.project=%s")
+        params.append(filters["project"])
+    if filters.get("author"):
+        clauses.append("v.posted_by=%s")
+        params.append(filters["author"])
+    if filters.get("tag"):
+        clauses.append("%s = ANY(d.tags)")
+        params.append(filters["tag"])
+    if filters.get("q"):
+        clauses.append("(d.title ILIKE %s OR d.slug ILIKE %s)")
+        like = f"%{filters['q']}%"
+        params += [like, like]
+    if filters.get("updated_before"):
+        clauses.append("d.updated_at < %s")
+        params.append(filters["updated_before"])
+    if filters.get("updated_after"):
+        clauses.append("d.updated_at > %s")
+        params.append(filters["updated_after"])
+    if clauses:
+        sql += " WHERE " + " AND ".join(clauses)
+    sql += " ORDER BY d.updated_at DESC"
+    with db.docs_conn() as c:
+        rows = c.execute(sql, params).fetchall()
+    return [{"slug": r[0], "title": r[1], "latest_version": r[2]} for r in rows]
+
+
 def list_versions(slug: str) -> list[dict]:
     """Version history for a slug, newest first."""
     with db.docs_conn() as c:

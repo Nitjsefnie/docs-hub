@@ -53,3 +53,27 @@ def test_list_docs_includes_byte_size():
     docs_repo.publish("a/sz", "Sized", [], None, "analyst", body)
     d = docs_repo.list_docs()[0]
     assert d["byte_size"] == len(body)
+
+
+def test_find_docs_by_each_filter():
+    docs_repo.publish("a/one", "Alpha One", ["x"], "alpha", "analyst", b"<h1>1</h1>")
+    docs_repo.publish("a/two", "Beta Two", ["y"], "beta", "kimi", b"<h1>2</h1>")
+    assert [d["slug"] for d in docs_repo.find_docs({"slug": "a/one"})] == ["a/one"]
+    assert [d["slug"] for d in docs_repo.find_docs({"project": "alpha"})] == ["a/one"]
+    assert [d["slug"] for d in docs_repo.find_docs({"author": "kimi"})] == ["a/two"]
+    assert [d["slug"] for d in docs_repo.find_docs({"tag": "x"})] == ["a/one"]
+    assert [d["slug"] for d in docs_repo.find_docs({"q": "beta"})] == ["a/two"]
+    assert {d["slug"] for d in docs_repo.find_docs({})} == {"a/one", "a/two"}
+
+
+def test_find_docs_and_combines():
+    docs_repo.publish("a/one", "Alpha One", [], "alpha", "analyst", b"<h1>1</h1>")
+    docs_repo.publish("a/two", "Alpha Two", [], "alpha", "kimi", b"<h1>2</h1>")
+    res = docs_repo.find_docs({"project": "alpha", "author": "kimi"})
+    assert [d["slug"] for d in res] == ["a/two"]
+
+
+def test_find_docs_shape():
+    docs_repo.publish("a/one", "Alpha One", [], "alpha", "analyst", b"<h1>1</h1>")
+    d = docs_repo.find_docs({"project": "alpha"})[0]
+    assert set(d) == {"slug", "title", "latest_version"}
