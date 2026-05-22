@@ -1,0 +1,40 @@
+import importlib.util, os, subprocess, sys, threading, time
+from pathlib import Path
+import uvicorn
+
+CLI = Path.home() / ".claude" / "scripts" / "docs_hub.py"
+
+
+def _spawn_server():
+    from backend.app import app
+    cfg = uvicorn.Config(app, host="127.0.0.1", port=8099, log_level="error")
+    server = uvicorn.Server(cfg)
+    threading.Thread(target=server.run, daemon=True).start()
+    for _ in range(50):
+        time.sleep(0.1)
+        if server.started:
+            return server
+    raise RuntimeError("server did not start")
+
+
+def test_cli_publish_get_list(tmp_path):
+    _spawn_server()
+    env = {**os.environ, "DOCS_HUB_URL": "http://127.0.0.1:8099",
+           "DOCS_HUB_API_KEY": "test-api-key"}
+    doc = tmp_path / "d.html"
+    doc.write_text("<h1>cli</h1>", encoding="utf-8")
+    pub = subprocess.run(
+        [sys.executable, str(CLI), "publish", str(doc), "--slug", "cli/demo",
+         "--title", "CLI Demo", "--from", "analyst"],
+        capture_output=True, text=True, env=env)
+    assert pub.returncode == 0, pub.stderr
+    assert "cli/demo" in pub.stdout
+    out = tmp_path / "got.html"
+    get = subprocess.run(
+        [sys.executable, str(CLI), "get", "cli/demo", "-o", str(out)],
+        capture_output=True, text=True, env=env)
+    assert get.returncode == 0, get.stderr
+    assert out.read_text(encoding="utf-8") == "<h1>cli</h1>"
+    lst = subprocess.run([sys.executable, str(CLI), "list"],
+                         capture_output=True, text=True, env=env)
+    assert "cli/demo" in lst.stdout
