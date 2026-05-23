@@ -38,3 +38,23 @@ def test_cli_publish_get_list(tmp_path):
     lst = subprocess.run([sys.executable, str(CLI), "list"],
                          capture_output=True, text=True, env=env)
     assert "cli/demo" in lst.stdout
+
+
+def test_cli_tags(tmp_path):
+    _spawn_server()
+    env = {**os.environ, "DOCS_HUB_URL": "http://127.0.0.1:8099",
+           "DOCS_HUB_API_KEY": "test-api-key"}
+    doc = tmp_path / "d.html"
+    doc.write_text("<h1>t</h1>", encoding="utf-8")
+    for slug, tags in (("cli/a", "spec,draft"), ("cli/b", "spec")):
+        subprocess.run(
+            [sys.executable, str(CLI), "publish", str(doc), "--slug", slug,
+             "--title", slug, "--tags", tags, "--from", "analyst"],
+            capture_output=True, text=True, env=env, check=True)
+    out = subprocess.run([sys.executable, str(CLI), "tags"],
+                         capture_output=True, text=True, env=env)
+    assert out.returncode == 0, out.stderr
+    # "<count>  <tag>" lines, most-used first
+    lines = [ln.strip() for ln in out.stdout.strip().splitlines()]
+    assert lines[0].endswith("spec") and lines[0].startswith("2")
+    assert any(ln.endswith("draft") and ln.startswith("1") for ln in lines)

@@ -109,3 +109,11 @@ async def whoami(request: Request) -> JSONResponse:
         "principal": request.state.principal,
         "user_id": request.state.user_id,
     })
+
+
+@router.get("/tags")
+async def api_tags(project: str = "") -> JSONResponse:
+    """Distinct tags in use with their counts (most-used first), so agents
+    can pick from established tags instead of inventing new ones."""
+    tags = docs_repo.list_tags(project or None)
+    return JSONResponse({"ok": True, "tags": tags})

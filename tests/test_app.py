@@ -168,3 +168,25 @@ def test_index_stamps_asset_mtime():
     assert "app.js?v=" in r.text
     assert 'href="styles.css"' not in r.text
     assert 'src="app.js"' not in r.text
+
+
+def test_api_tags():
+    c = _client()
+    _publish(c, "alpha/x", tags="spec,draft")
+    _publish(c, "alpha/y", tags="spec")
+    _publish(c, "beta/z", project="beta", tags="report")
+    r = c.get("/api/tags", headers=KEY)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    by = {t["tag"]: t["count"] for t in body["tags"]}
+    assert by == {"spec": 2, "draft": 1, "report": 1}
+    # most-used first
+    assert body["tags"][0]["tag"] == "spec" and body["tags"][0]["count"] == 2
+    # project-scoped
+    r2 = c.get("/api/tags?project=beta", headers=KEY)
+    assert r2.json()["tags"] == [{"tag": "report", "count": 1}]
+
+
+def test_api_tags_requires_auth():
+    assert _client().get("/api/tags").status_code == 401

@@ -101,3 +101,22 @@ def test_delete_docs_partial_set():
     assert docs_repo.delete_docs(["a/drop", "missing/x"]) == 1
     assert docs_repo.get_latest("a/keep") is not None
     assert docs_repo.get_latest("a/drop") is None
+
+
+def test_list_tags_empty():
+    assert docs_repo.list_tags() == []
+
+
+def test_list_tags_distinct_with_counts_most_used_first():
+    docs_repo.publish("a/one", "One", ["spec", "draft"], "alpha", "analyst", b"<h1>1</h1>")
+    docs_repo.publish("a/two", "Two", ["spec"], "beta", "kimi", b"<h1>2</h1>")
+    tags = docs_repo.list_tags()
+    by = {t["tag"]: t["count"] for t in tags}
+    assert by == {"spec": 2, "draft": 1}
+    assert tags[0]["tag"] == "spec" and tags[0]["count"] == 2
+
+
+def test_list_tags_scoped_to_project():
+    docs_repo.publish("a/one", "One", ["spec"], "alpha", "analyst", b"<h1>1</h1>")
+    docs_repo.publish("a/two", "Two", ["draft"], "beta", "kimi", b"<h1>2</h1>")
+    assert docs_repo.list_tags(project="alpha") == [{"tag": "spec", "count": 1}]

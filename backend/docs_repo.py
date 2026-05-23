@@ -176,3 +176,18 @@ def list_versions(slug: str) -> list[dict]:
          "byte_size": r[3], "sha256": r[4]}
         for r in rows
     ]
+
+
+def list_tags(project: str | None = None) -> list[dict]:
+    """Every distinct tag in use with its usage count, most-used first.
+    Lets agents pick from already-established tags rather than inventing
+    new ones. `project` scopes to one project's docs."""
+    sql = "SELECT unnest(d.tags) AS tag, COUNT(*) AS n FROM docs d"
+    params: list = []
+    if project is not None:
+        sql += " WHERE d.project=%s"
+        params.append(project)
+    sql += " GROUP BY tag ORDER BY n DESC, tag ASC"
+    with db.docs_conn() as c:
+        rows = c.execute(sql, params).fetchall()
+    return [{"tag": r[0], "count": r[1]} for r in rows]
