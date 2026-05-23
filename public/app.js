@@ -370,6 +370,15 @@ function wireDocViewer() {
     btn.innerHTML = '✓ copied';
     setTimeout(() => (btn.innerHTML = old), 1200);
   });
+  const iframe = $('#artifact');
+  if (iframe) {
+    iframe.addEventListener('load', () => {
+      try {
+        const t = iframe.contentDocument && iframe.contentDocument.title;
+        if (t) document.title = t + ' · docs';
+      } catch (e) { /* cross-origin fallback: keep the slug title */ }
+    });
+  }
   document.addEventListener('keydown', _docKeydown);
 }
 const _docKeydown = (e) => {
