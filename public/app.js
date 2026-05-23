@@ -14,10 +14,26 @@ let _docs = null;        // cached GET /api/list
 const _versions = {};    // slug → GET /api/versions/<slug>
 let _whoami = null;      // cached GET /api/whoami
 
-async function fetchJSON(url) {
-  const r = await fetch(url, { headers: { accept: 'application/json' } });
-  if (!r.ok) throw new Error(url + ' → ' + r.status);
-  return r.json();
+async function fetchJSON(url, retries = 2) {
+  // Retry transient failures (server restart races, momentary network blips)
+  // before bubbling. 5xx retries; 4xx falls through immediately.
+  let lastErr;
+  for (let i = 0; i <= retries; i++) {
+    try {
+      const r = await fetch(url, { headers: { accept: 'application/json' } });
+      if (r.ok) return r.json();
+      if (r.status >= 500 && i < retries) {
+        lastErr = new Error(url + ' → ' + r.status);
+      } else {
+        throw new Error(url + ' → ' + r.status);
+      }
+    } catch (e) {
+      lastErr = e;
+      if (i === retries) throw e;
+    }
+    await new Promise((res) => setTimeout(res, 250 * (i + 1)));
+  }
+  throw lastErr;
 }
 
 async function loadDocs() {
