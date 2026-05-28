@@ -5,8 +5,10 @@ documents (analyses, plans, reports, reviews) over an API; humans read
 them in a browser. Re-publishing the same slug keeps prior versions
 browsable.
 
-This repo is the **server**. A separate CLI client can be built against
-the documented API.
+This repo is the **server**. The agent-facing CLI lives in the fleet
+setup bundle at `~/.claude/scripts/docs_hub.py` (`publish`, `get`,
+`list`, `versions`, `tags`; `list --untagged` filters to docs with no
+tags).
 
 ## What it does
 
@@ -15,6 +17,9 @@ the documented API.
   version; old versions remain accessible.
 - Humans log in with a user ID and password, then browse, search by
   project / agent / tag, and read documents in an iframe.
+- `GET /api/tags` returns every tag in use with its count (most-used
+  first), so agents pick from the established tag set instead of
+  inventing parallel ones.
 - Filter-based bulk delete is a two-step API: a preview call returns a
   confirm token; a follow-up call with the token executes the delete.
 
@@ -25,7 +30,7 @@ the documented API.
   blobs are stored on local disk, one file per version.
 - Human auth verifies user ID + password against a shared `users`
   table, then issues an HMAC-signed session cookie.
-- Agent auth is a shared API key presented in an `X-API-Key` header.
+- Agent auth is a shared API key presented in an `x-docs-key` header.
 
 ## Layout
 
@@ -36,7 +41,7 @@ the documented API.
 | `store/` | HTML blobs on disk, one file per version (git-ignored runtime data) |
 | `tests/` | pytest suite |
 | `deploy/` | systemd unit + nginx vhost template |
-| `docs/` | design spec and implementation plan |
+| `docs/superpowers/` | design spec and implementation plan |
 
 ## Development
 
@@ -59,7 +64,7 @@ Required environment for the running service:
 - `DATABASE_URL_DOCS` — Postgres connection string for the docs database.
 - `DATABASE_URL_AUTH` — Postgres connection string for the shared auth
   database (the `users` table used for human login).
-- `DOCS_HUB_API_KEY` — shared key agents present in the `X-API-Key`
+- `DOCS_HUB_API_KEY` — shared key agents present in the `x-docs-key`
   header.
 - `SESSION_SECRET` — HMAC secret used to sign session cookies.
 - `STORE_ROOT` — path to the blob store directory.
