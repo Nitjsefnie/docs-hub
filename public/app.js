@@ -13,6 +13,7 @@ const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 let _docs = null;        // cached GET /api/list
 const _versions = {};    // slug → GET /api/versions/<slug>
 let _whoami = null;      // cached GET /api/whoami
+let _lastSig = null;     // signature of the currently-rendered screen (poll gate)
 
 async function fetchJSON(url, retries = 2) {
   // Retry transient failures (server restart races, momentary network blips)
@@ -502,6 +503,37 @@ function renderError(err) {
   `;
 }
 
+// ─────────────────────────── poll signatures ───────────────────────────
+// A cheap deterministic string of exactly what each screen DISPLAYS, so the
+// poll loop re-renders only when the visible output would actually change.
+
+function sigIndex() {
+  return (_docs || [])
+    .map((d) => d.slug + '|' + d.latest_version + '|' + d.updated_at)
+    .join('\n');
+}
+
+function sigVersions(slug) {
+  return (_versions[slug] || [])
+    .map((v) => v.version + '|' + v.sha256)
+    .join('\n');
+}
+
+// The viewer keys off the ONE version on screen, not the whole list. A route
+// pinned to /v<n> resolves to n (never changes on publish → no reload); a bare
+// slug resolves to latest (bumps when a new version lands → iframe swaps).
+function sigViewer(route) {
+  const doc = (_docs || []).find((d) => d.slug === route.slug);
+  return String(route.version ?? (doc && doc.latest_version) ?? '?');
+}
+
+function currentSig(route) {
+  if (route.name === 'index') return sigIndex();
+  if (route.name === 'versions') return sigVersions(route.slug);
+  if (route.name === 'viewer') return sigViewer(route);
+  return null;
+}
+
 // ─────────────────────────── router ───────────────────────────
 
 function parseRoute() {
@@ -554,6 +586,7 @@ async function render() {
       viewer: (route.slug || '') + ' · docs',
       '404': '404 · docs',
     })[route.name] || 'docs.nitjsefni.eu';
+  _lastSig = currentSig(route);
 }
 
 window.addEventListener('hashchange', render);
