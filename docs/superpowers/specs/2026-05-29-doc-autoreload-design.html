@@ -1,0 +1,707 @@
+<!-- Copyright 2026 Anthropic PBC · SPDX-License-Identifier: Apache-2.0 -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Design spec — Live doc auto-reload (docs-hub SPA)</title>
+  <style>
+    :root {
+      --ivory:    #1B1A17;
+      --slate:    #F5F3EC;
+      --clay:     #D97757;
+      --oat:      #3A352B;
+      --olive:    #8FA56E;
+      --rust:     #E08B7F;
+      --gray-150: #2E2C27;
+      --gray-300: #3A3833;
+      --gray-500: #8F8D82;
+      --gray-700: #CFCCC2;
+      --white:    #252420;
+
+      --serif: ui-serif, Georgia, 'Times New Roman', serif;
+      --sans:  system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      --mono:  ui-monospace, 'SF Mono', Menlo, Monaco, monospace;
+
+      --radius: 12px;
+      --border: 1.5px solid var(--gray-300);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: var(--sans);
+      background: var(--ivory);
+      color: var(--gray-700);
+      line-height: 1.58;
+      padding: 56px 32px 120px;
+      -webkit-font-smoothing: antialiased;
+    }
+    .page { margin: 0 auto; }
+
+    /* ---------- table of contents ---------- */
+    .toc {
+      position: fixed;
+      top: 24px; right: 24px;
+      background: var(--white);
+      border: var(--border);
+      border-radius: 10px;
+      padding: 12px 16px;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      max-width: 220px;
+      z-index: 50;
+    }
+    .toc .toc-label {
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--gray-500);
+      margin-bottom: 8px;
+    }
+    .toc a { display: block; color: var(--gray-700); text-decoration: none; padding: 2px 0; }
+    .toc a:hover { color: var(--clay); }
+    @media (max-width: 1180px) { .toc { display: none; } }
+
+    /* ---------- header ---------- */
+    header.page-head { margin-bottom: 40px; max-width: 840px; }
+    .eyebrow {
+      font-family: var(--mono);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--gray-500);
+      margin-bottom: 12px;
+    }
+    h1 {
+      font-family: var(--serif);
+      font-weight: 500;
+      font-size: 38px;
+      line-height: 1.14;
+      color: var(--slate);
+      margin-bottom: 18px;
+      letter-spacing: -0.01em;
+    }
+    .context-box {
+      background: var(--gray-150);
+      border: var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      font-size: 14.5px;
+      color: var(--gray-700);
+    }
+    .context-box .label {
+      font-family: var(--mono);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--gray-500);
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    /* ---------- summary strip ---------- */
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 56px;
+    }
+    @media (max-width: 900px) { .summary { grid-template-columns: repeat(2, 1fr); } }
+    .summary .cell {
+      background: var(--white);
+      border: var(--border);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+    }
+    .summary .k {
+      font-family: var(--mono);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--gray-500);
+      margin-bottom: 6px;
+    }
+    .summary .v { font-size: 17px; color: var(--slate); font-weight: 600; }
+    .summary .v.accent  { color: var(--clay); }
+    .summary .v.ok      { color: var(--olive); }
+
+    /* ---------- decision banner ---------- */
+    .decision {
+      background: var(--white);
+      border: var(--border);
+      border-left: 4px solid var(--clay);
+      border-radius: var(--radius);
+      padding: 22px 26px;
+      margin-bottom: 56px;
+    }
+    .decision .d-tag {
+      font-family: var(--mono);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--clay);
+      margin-bottom: 8px;
+    }
+    .decision .d-head {
+      font-family: var(--serif);
+      font-size: 22px;
+      font-weight: 500;
+      color: var(--slate);
+      margin-bottom: 10px;
+      letter-spacing: -0.01em;
+    }
+    .decision .d-body { font-size: 14.5px; color: var(--gray-700); max-width: 760px; }
+    .decision .d-body + .d-body { margin-top: 8px; }
+
+    /* ---------- section chrome ---------- */
+    section { margin-bottom: 60px; scroll-margin-top: 24px; }
+    .sec-head {
+      display: flex;
+      align-items: baseline;
+      gap: 14px;
+      margin-bottom: 8px;
+    }
+    .sec-head .num {
+      font-family: var(--mono);
+      font-size: 12px;
+      background: var(--oat);
+      color: var(--slate);
+      padding: 3px 9px;
+      border-radius: 8px;
+    }
+    .sec-head h2 {
+      font-family: var(--serif);
+      font-weight: 500;
+      font-size: 26px;
+      color: var(--slate);
+      letter-spacing: -0.01em;
+    }
+    .sec-intro {
+      font-size: 14.5px;
+      color: var(--gray-500);
+      max-width: 740px;
+      margin-bottom: 24px;
+    }
+    p.body { font-size: 14.5px; max-width: 760px; margin-bottom: 14px; }
+    p.body strong { color: var(--slate); }
+    code {
+      font-family: var(--mono);
+      font-size: 0.88em;
+      background: var(--gray-150);
+      border: 1px solid var(--gray-300);
+      border-radius: 5px;
+      padding: 1px 5px;
+      color: #C9B98A;
+    }
+    pre {
+      background: var(--gray-150);
+      border: var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      overflow-x: auto;
+      font-family: var(--mono);
+      font-size: 12.5px;
+      line-height: 1.55;
+      color: var(--gray-700);
+      max-width: 820px;
+      margin-bottom: 16px;
+    }
+    pre code { background: none; border: none; padding: 0; color: inherit; font-size: inherit; }
+    .cmt { color: var(--gray-500); }
+
+    /* ---------- generic data table ---------- */
+    .tbl {
+      width: 100%;
+      border: var(--border);
+      border-radius: var(--radius);
+      border-collapse: separate;
+      border-spacing: 0;
+      overflow: hidden;
+      font-size: 13.5px;
+    }
+    .tbl th, .tbl td {
+      text-align: left;
+      padding: 11px 16px;
+      border-bottom: 1px solid var(--gray-300);
+      vertical-align: top;
+    }
+    .tbl th {
+      font-family: var(--mono);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--gray-500);
+      background: var(--gray-150);
+      font-weight: 600;
+    }
+    .tbl tr:last-child td { border-bottom: none; }
+    .tbl td { color: var(--gray-700); }
+    .tbl td.slate { color: var(--slate); font-weight: 600; }
+    .tbl tbody tr:hover { background: var(--gray-150); }
+
+    /* ---------- comparison ("X vs Y") cards ---------- */
+    .compare {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    @media (max-width: 820px) { .compare { grid-template-columns: 1fr; } }
+    .compare .col {
+      background: var(--white);
+      border: var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .compare .col-head {
+      padding: 12px 18px;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      border-bottom: var(--border);
+    }
+    .compare .col.bad  .col-head { background: #2E211C; color: var(--rust); }
+    .compare .col.good .col-head { background: #232A1C; color: var(--olive); }
+    .compare .col-body { padding: 16px 18px; font-size: 13.5px; }
+    .compare .col-body ul { list-style: none; }
+    .compare .col-body li { margin: 7px 0; padding-left: 18px; position: relative; }
+    .compare .col.bad  li:before { content: '\2715'; position: absolute; left: 0; color: var(--rust); }
+    .compare .col.good li:before { content: '\2713'; position: absolute; left: 0; color: var(--olive); }
+
+    /* ---------- change inventory ---------- */
+    .changes { display: flex; flex-direction: column; gap: 12px; }
+    .change {
+      background: var(--white);
+      border: var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      gap: 4px 24px;
+    }
+    @media (max-width: 720px) { .change { grid-template-columns: 1fr; } }
+    .change .file {
+      font-family: var(--mono);
+      font-size: 12.5px;
+      color: var(--clay);
+      word-break: break-all;
+    }
+    .change .what { font-size: 14px; color: var(--gray-700); }
+    .change .what .lead { color: var(--slate); font-weight: 600; }
+
+    /* ---------- checklist ---------- */
+    .checklist { display: flex; flex-direction: column; gap: 10px; max-width: 820px; }
+    .check {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      background: var(--white);
+      border: var(--border);
+      border-radius: 10px;
+      padding: 12px 16px;
+    }
+    .check .box {
+      width: 18px; height: 18px;
+      border-radius: 5px;
+      border: 2px solid var(--gray-500);
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+    .check .ck-text { font-size: 14px; color: var(--gray-700); }
+    .check .ck-text strong { color: var(--slate); }
+
+    /* ---------- risk table ---------- */
+    .risks {
+      border: var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: var(--white);
+    }
+    .risks .row { display: grid; grid-template-columns: 1.6fr 90px 1.6fr; }
+    @media (max-width: 780px) { .risks .row { grid-template-columns: 1fr; } }
+    .risks .row + .row { border-top: var(--border); }
+    .risks .cell { padding: 14px 18px; font-size: 13.5px; }
+    .risks .cell + .cell { border-left: var(--border); }
+    @media (max-width: 780px) {
+      .risks .cell + .cell { border-left: none; border-top: 1px dashed var(--gray-300); }
+    }
+    .risks .head {
+      background: var(--gray-150);
+      font-weight: 600;
+      color: var(--slate);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .sev {
+      display: inline-block;
+      font-family: var(--mono);
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-weight: 600;
+    }
+    .sev.high { background: #4A2A1C; color: #F0B79C; }
+    .sev.med  { background: var(--oat);  color: var(--slate); }
+    .sev.low  { background: #2D3A24; color: #B6CC96; }
+
+    /* ---------- deferred / out-of-scope cards ---------- */
+    .deferred { display: flex; flex-direction: column; gap: 14px; max-width: 840px; }
+    .defer {
+      background: var(--white);
+      border: var(--border);
+      border-left: 4px solid var(--gray-500);
+      border-radius: 10px;
+      padding: 16px 20px;
+    }
+    .defer .dt { font-weight: 600; font-size: 15px; color: var(--slate); margin-bottom: 4px; }
+    .defer .dd { font-size: 13.5px; color: var(--gray-500); }
+
+    .footer {
+      color: var(--gray-500);
+      font-size: 13px;
+      margin-top: 64px;
+      padding-top: 22px;
+      border-top: 1px solid var(--gray-300);
+    }
+  </style>
+</head>
+<body>
+
+  <nav class="toc">
+    <div class="toc-label">Sections</div>
+    <a href="#s1">01 · Background</a>
+    <a href="#s2">02 · Approach chosen</a>
+    <a href="#s3">03 · Per-screen behaviour</a>
+    <a href="#s4">04 · Change inventory</a>
+    <a href="#s5">05 · Data &amp; control flow</a>
+    <a href="#s6">06 · Verification</a>
+    <a href="#s7">07 · Risks</a>
+    <a href="#s8">08 · Out of scope</a>
+  </nav>
+
+  <div class="page">
+
+    <header class="page-head">
+      <div class="eyebrow">Design spec · docs-hub</div>
+      <h1>Live document auto-reload in the docs-hub SPA</h1>
+      <div class="context-box">
+        <span class="label">Context</span>
+        The docs-hub SPA (<code>public/app.js</code>) renders a published artifact in a sandboxed
+        iframe, but caches <code>/api/list</code> and <code>/api/versions/&lt;slug&gt;</code> once and never
+        refreshes — a reader sitting on a doc never sees a newer version land. This spec adds a
+        polling loop so that, every 30 s, the currently-open screen reflects new versions and new
+        docs automatically. Frontend-only; no backend changes.
+      </div>
+    </header>
+
+    <div class="summary">
+      <div class="cell"><div class="k">Surface</div><div class="v accent">SPA only</div></div>
+      <div class="cell"><div class="k">Files touched</div><div class="v">1 · app.js</div></div>
+      <div class="cell"><div class="k">Risk</div><div class="v ok">Low</div></div>
+      <div class="cell"><div class="k">Backend / DB</div><div class="v ok">No change</div></div>
+    </div>
+
+    <div class="decision">
+      <div class="d-tag">Decision</div>
+      <div class="d-head">One global, route-aware poll loop in <code>app.js</code> that re-fetches the
+        current screen's data every 30&nbsp;s and re-renders only when a cheap signature changes.</div>
+      <div class="d-body">Chosen over per-screen timers (more lifecycle surface, duplicated fetch
+        logic) and server push / SSE (needs backend work, a publish-time event hook, and Cloudflare
+        stream proxying — overkill for a feature with 30&nbsp;s latency tolerance). A single timer
+        reads <code>location.hash</code> each tick, so it covers all three screens with one lifecycle
+        and no per-navigation cleanup.</div>
+      <div class="d-body">On the document viewer the new version is <strong>auto-swapped</strong> into
+        the iframe the moment it is detected (no banner, no click). The accepted cost is that the
+        iframe scroll resets to the top on swap. A reader who has deliberately navigated to an
+        <em>older</em> version is never swapped off it.</div>
+    </div>
+
+    <section id="s1">
+      <div class="sec-head"><span class="num">01</span><h2>Background</h2></div>
+      <p class="sec-intro">What the current SPA does, and the precise gap this closes.</p>
+      <p class="body">The SPA is hash-routed with three screens: index (<code>#/</code>), version log
+        (<code>#/d/&lt;slug&gt;/versions</code>), and the document viewer (<code>#/d/&lt;slug&gt;</code> /
+        <code>#/d/&lt;slug&gt;/v&lt;n&gt;</code>). The viewer renders chrome plus a sandboxed
+        <code>&lt;iframe&gt;</code> whose <code>src</code> is the raw artifact route
+        <code>/d/&lt;slug&gt;/v&lt;n&gt;</code>. The raw route serves <em>agent-published</em> HTML with no
+        <code>app.js</code> — so all watching and reload logic must live in the SPA shell, never in
+        the iframe payload.</p>
+      <p class="body">The data layer caches permanently: <code>loadDocs()</code> fills module-level
+        <code>_docs</code> once; <code>loadVersions(slug)</code> fills <code>_versions[slug]</code> once. There
+        is no refresh path and no timer. The viewer already computes
+        <code>isStale = ver !== latest</code> and shows a <code>v{ver} / v{latest}</code> counter — so the
+        "am I on the latest?" signal already exists; what is missing is fresh data and a trigger.</p>
+    </section>
+
+    <section id="s2">
+      <div class="sec-head"><span class="num">02</span><h2>Approach chosen</h2></div>
+      <p class="sec-intro">Single global poll loop vs. the alternatives.</p>
+      <div class="compare">
+        <div class="col bad">
+          <div class="col-head">Rejected</div>
+          <div class="col-body"><ul>
+            <li><strong>Per-screen timers</strong> started in each <code>wire*()</code> and cleared on
+              route change — three lifecycles, duplicated fetch logic, no gain now that every screen
+              is live.</li>
+            <li><strong>Server push (SSE/WebSocket)</strong> — true realtime, but needs a backend
+              event endpoint, a publish-time hook, Cloudflare stream proxying, and connection
+              lifecycle. Disproportionate to a 30&nbsp;s tolerance.</li>
+          </ul></div>
+        </div>
+        <div class="col good">
+          <div class="col-head">Chosen</div>
+          <div class="col-body"><ul>
+            <li><strong>One global <code>setInterval</code></strong> started once at boot.</li>
+            <li>Each tick reads <code>parseRoute()</code>, re-fetches only that screen's data,
+              overwrites the cache, and re-renders <em>only if a signature changed</em>.</li>
+            <li>One timer, one lifecycle; pauses on hidden tab, fires once on re-show.</li>
+            <li>No backend change — the endpoints already return everything needed and the API JSON
+              is not edge-cached.</li>
+          </ul></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="s3">
+      <div class="sec-head"><span class="num">03</span><h2>Per-screen behaviour</h2></div>
+      <p class="sec-intro">"Live" means something different on each screen. The re-render rule is
+        per-route. The <strong>signature gate</strong> is the load-bearing guard everywhere — without it
+        the viewer iframe would reload every 30&nbsp;s even with no new version, needlessly resetting
+        scroll.</p>
+      <table class="tbl">
+        <thead><tr><th>Screen</th><th>Polls</th><th>Re-render when…</th><th>Effect</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="slate">Viewer<br><code>#/d/&lt;slug&gt;</code></td>
+            <td><code>/api/list</code> + <code>/api/versions/&lt;slug&gt;</code></td>
+            <td>the <strong>resolved displayed version</strong> changes — i.e. a bare
+              <code>#/d/&lt;slug&gt;</code> (tracking latest) and latest bumps</td>
+            <td>iframe <code>src</code> → new version; auto-swaps (scroll resets to top). Any route
+              pinned to an explicit <code>/v&lt;n&gt;</code> — even <code>/v&lt;latest&gt;</code> — never
+              re-renders, so the reader is left in place.</td>
+          </tr>
+          <tr>
+            <td class="slate">Index<br><code>#/</code></td>
+            <td><code>/api/list</code></td>
+            <td>list signature changes (new doc, version bump, <code>updated_at</code>)</td>
+            <td>table re-renders. <strong>Skipped while a filter input/select has focus</strong>
+              (<code>document.activeElement</code> inside <code>.filterbar</code>); deferred to next tick.
+              <code>FILTER</code> state is global, so filters survive a re-render.</td>
+          </tr>
+          <tr>
+            <td class="slate">Version log<br><code>#/d/&lt;slug&gt;/versions</code></td>
+            <td><code>/api/list</code> + <code>/api/versions/&lt;slug&gt;</code></td>
+            <td>version-list signature changes</td>
+            <td>a new row appears; <code>latest</code> badge moves.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="s4">
+      <div class="sec-head"><span class="num">04</span><h2>Change inventory</h2></div>
+      <p class="sec-intro">Every edit lands in <code>public/app.js</code>. No other file changes.</p>
+      <div class="changes">
+        <div class="change">
+          <div class="file">public/app.js · loadDocs / loadVersions</div>
+          <div class="what"><span class="lead">Add a <code>force</code> path.</span>
+            <code>loadDocs(force=false)</code> and <code>loadVersions(slug, force=false)</code>: when
+            <code>force</code> is true, fetch fresh and overwrite the cache; otherwise behave exactly as
+            today. Normal navigation stays cached; the poller always forces.</div>
+        </div>
+        <div class="change">
+          <div class="file">public/app.js · new sig helpers</div>
+          <div class="what"><span class="lead">Add per-screen signature functions.</span> A cheap
+            deterministic string capturing exactly what each screen <em>displays</em> — so the gate
+            fires only when the visible output would actually change.
+            <strong>Index</strong>: <code>slug|latest_version|updated_at</code> per row, joined.
+            <strong>Version log</strong>: the version list's <code>version|sha256</code> joined.
+            <strong>Viewer</strong>: the single <em>resolved displayed version</em> — the pinned
+            <code>/v&lt;n&gt;</code> if the route has one, else <code>latest_version</code>. This is the
+            critical distinction: the viewer must <em>not</em> key off the whole version list, or a
+            new version landing would reload the iframe of a reader pinned to an older version (a
+            full <code>render()</code> recreates the iframe element). Keying off the resolved version
+            means a bare-slug viewer swaps when latest bumps, while a pinned viewer never moves.</div>
+        </div>
+        <div class="change">
+          <div class="file">public/app.js · render()</div>
+          <div class="what"><span class="lead">Stamp the last-rendered signature.</span> On every
+            normal <code>render()</code>, store the current screen's signature in a module-level
+            <code>_lastSig</code> so the first poll after a navigation compares against what is actually
+            on screen.</div>
+        </div>
+        <div class="change">
+          <div class="file">public/app.js · new startPolling()</div>
+          <div class="what"><span class="lead">Add the poll loop, call it once at boot.</span>
+            A 30&nbsp;s <code>setInterval</code> (interval as a named const). Each tick: bail if tab
+            hidden; <code>parseRoute()</code>; force-refresh the relevant data; compute the new
+            signature; if changed (and not blocked by the focus guard on index), re-render the
+            current screen via the existing <code>render()</code>. A <code>visibilitychange</code> listener
+            triggers an immediate refresh when the tab is re-shown.</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="s5">
+      <div class="sec-head"><span class="num">05</span><h2>Data &amp; control flow</h2></div>
+      <p class="sec-intro">One tick of the loop, in pseudocode. The fetch path reuses
+        <code>fetchJSON</code>, whose existing 5xx-retry covers transient blips; a failed tick is
+        swallowed (skip, try next) so a blip never tears the screen into the error view.</p>
+      <pre><code>const POLL_MS = 30_000;
+
+async function pollTick() {
+  if (document.visibilityState === 'hidden') return;   <span class="cmt">// paused when tab hidden</span>
+  const route = parseRoute();
+  try {
+    if (route.name === 'index') {
+      await loadDocs(true);                              <span class="cmt">// force-refresh _docs</span>
+      maybeRerender(sigIndex());                         <span class="cmt">// honours filterbar focus guard</span>
+    } else if (route.name === 'viewer') {
+      await loadDocs(true);                              <span class="cmt">// refreshes latest_version</span>
+      await loadVersions(route.slug, true);              <span class="cmt">// refreshes the new version object</span>
+      maybeRerender(sigViewer(route));                   <span class="cmt">// resolved DISPLAYED version only</span>
+    } else if (route.name === 'versions') {
+      await loadDocs(true);
+      await loadVersions(route.slug, true);
+      maybeRerender(sigVersions(route.slug));            <span class="cmt">// whole version list</span>
+    }
+  } catch (e) { /* swallow — try next tick */ }
+}
+
+<span class="cmt">// Viewer gate: the ONE version on screen, not the list. A pinned /v&lt;n&gt; route</span>
+<span class="cmt">// resolves to n (never changes on publish → no reload); a bare slug resolves to</span>
+<span class="cmt">// latest (bumps when a new version lands → iframe swaps).</span>
+function sigViewer(route) {
+  const doc = (_docs || []).find(d => d.slug === route.slug);
+  return String(route.version ?? doc?.latest_version ?? '?');
+}
+
+function maybeRerender(sig) {
+  if (sig === _lastSig) return;                          <span class="cmt">// signature gate: nothing changed</span>
+  if (indexFilterFocused()) return;                      <span class="cmt">// defer if user is filtering</span>
+  render();                                              <span class="cmt">// render() re-stamps _lastSig</span>
+}</code></pre>
+      <p class="body">The "only swap when tracking latest" rule is enforced by <code>sigViewer</code>,
+        not by luck. A bare <code>#/d/&lt;slug&gt;</code> resolves to <code>latest_version</code>; when a new
+        version lands, that number changes, the gate fires, <code>render()</code> re-points the iframe at
+        the new version, and it swaps (scroll resets — accepted). A route pinned to <code>/v&lt;n&gt;</code>
+        resolves to <code>n</code>, which a new publish never changes — so the signature is unchanged, the
+        gate does <em>not</em> fire, and <strong>no re-render happens at all</strong> (the iframe element
+        is never recreated, so scroll is preserved). The <code>v{n} / v{m}</code> counter's <code>{m}</code>
+        therefore lags on a pinned view until the reader navigates — a deliberate trade documented in
+        §08.</p>
+    </section>
+
+    <section id="s6">
+      <div class="sec-head"><span class="num">06</span><h2>Verification</h2></div>
+      <p class="sec-intro">The pytest suite covers the API, not SPA JS, and the repo has no JS test
+        harness — so this feature is verified manually in the browser. Bolting on a JS runner for one
+        feature is out of scope (see §08).</p>
+      <div class="checklist">
+        <div class="check"><div class="box"></div><div class="ck-text"><strong>Viewer auto-swap.</strong>
+          Open <code>#/d/&lt;slug&gt;</code> on the latest version; publish a new version via the CLI; within
+          ~30&nbsp;s the iframe shows the new version and the <code>v{n} / v{m}</code> counter advances.</div></div>
+        <div class="check"><div class="box"></div><div class="ck-text"><strong>Stale view is left alone.</strong>
+          Navigate to an older <code>/v&lt;n&gt;</code>; publish a new version; the iframe does <em>not</em>
+          swap and scroll position is preserved.</div></div>
+        <div class="check"><div class="box"></div><div class="ck-text"><strong>Index live-update.</strong>
+          Sit on <code>#/</code>; publish a new doc / new version; the row appears or the version bumps
+          within ~30&nbsp;s.</div></div>
+        <div class="check"><div class="box"></div><div class="ck-text"><strong>Filter focus guard.</strong>
+          Type in the search box while a version lands; the table does not re-render mid-keystroke;
+          it updates on the next tick after focus leaves.</div></div>
+        <div class="check"><div class="box"></div><div class="ck-text"><strong>Version log live-update.</strong>
+          Sit on <code>#/d/&lt;slug&gt;/versions</code>; publish; a new row appears and the <code>latest</code>
+          badge moves.</div></div>
+        <div class="check"><div class="box"></div><div class="ck-text"><strong>No-change quiescence.</strong>
+          Leave a viewer open with no publishing; confirm via DevTools that the iframe is not
+          reloading each tick (signature gate holds) and that polling pauses on a hidden tab.</div></div>
+        <div class="check"><div class="box"></div><div class="ck-text"><strong>Regression.</strong>
+          <code>.venv/bin/pytest -v</code> still green (no backend change expected, but confirm).</div></div>
+      </div>
+    </section>
+
+    <section id="s7">
+      <div class="sec-head"><span class="num">07</span><h2>Risks</h2></div>
+      <div class="risks">
+        <div class="row">
+          <div class="cell head">Risk</div>
+          <div class="cell head">Sev</div>
+          <div class="cell head">Mitigation</div>
+        </div>
+        <div class="row">
+          <div class="cell">Unconditional re-render reloads the iframe every tick, resetting scroll
+            even with no new version.</div>
+          <div class="cell"><span class="sev high">HIGH</span></div>
+          <div class="cell">The signature gate (<code>sig === _lastSig → skip</code>) is mandatory and is
+            the core of the design; re-render happens only on real change.</div>
+        </div>
+        <div class="row">
+          <div class="cell">Re-rendering the index mid-interaction blows away input focus / open
+            select.</div>
+          <div class="cell"><span class="sev med">MED</span></div>
+          <div class="cell">Focus guard: skip the index re-render while <code>document.activeElement</code>
+            is inside <code>.filterbar</code>; apply on the next tick.</div>
+        </div>
+        <div class="row">
+          <div class="cell">Auto-swap yanks a reader off the version they are reading.</div>
+          <div class="cell"><span class="sev low">LOW</span></div>
+          <div class="cell">Accepted for the latest view (the explicit product choice). Older pinned
+            versions are never swapped. Scroll-reset on swap is a documented, accepted cost.</div>
+        </div>
+        <div class="row">
+          <div class="cell">A poll fetch fails (server restart, blip) and tears the screen into the
+            error view.</div>
+          <div class="cell"><span class="sev low">LOW</span></div>
+          <div class="cell"><code>fetchJSON</code>'s 5xx-retry plus a try/catch in the tick that swallows
+            failures — a failed tick is skipped, the next one recovers.</div>
+        </div>
+        <div class="row">
+          <div class="cell">Viewed version is deleted out from under the reader.</div>
+          <div class="cell"><span class="sev low">LOW</span></div>
+          <div class="cell">Next re-render resolves to <code>renderNotFound</code> — acceptable and
+            already the behaviour for a missing version.</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="s8">
+      <div class="sec-head"><span class="num">08</span><h2>Out of scope</h2></div>
+      <p class="sec-intro">Considered and deliberately deferred — named so the reader knows they were
+        weighed, not missed.</p>
+      <div class="deferred">
+        <div class="defer">
+          <div class="dt">Server push (SSE / WebSocket)</div>
+          <div class="dd">True realtime instead of 30&nbsp;s polling. Deferred: needs backend +
+            Cloudflare stream work disproportionate to the latency tolerance. Revisit only if polling
+            load or latency becomes a real complaint.</div>
+        </div>
+        <div class="defer">
+          <div class="dt">A JS test harness</div>
+          <div class="dd">No JS runner exists in the repo; this feature is verified manually. Adding
+            Jest/Vitest + jsdom for one feature is not justified here — propose separately if SPA JS
+            grows enough to warrant it.</div>
+        </div>
+        <div class="defer">
+          <div class="dt">Configurable / adaptive interval</div>
+          <div class="dd">Fixed 30&nbsp;s const. Backoff when idle or a user-set interval are
+            unnecessary for current usage.</div>
+        </div>
+        <div class="defer">
+          <div class="dt">In-place counter update for stale views</div>
+          <div class="dd">When viewing an older version, the <code>v{n} / v{m}</code> counter's
+            <code>{m}</code> can lag until navigation. Updating just that text without a full re-render
+            is possible but not worth the added code path.</div>
+        </div>
+      </div>
+    </section>
+
+    <div class="footer">
+      <p>Design spec · docs-hub · 2026-05-29 · feature: live document auto-reload ·
+         implements: frontend-only change to <code>public/app.js</code> · next: writing-plans</p>
+    </div>
+
+  </div>
+</body>
+</html>
