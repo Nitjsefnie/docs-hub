@@ -36,21 +36,23 @@ async function fetchJSON(url, retries = 2) {
   throw lastErr;
 }
 
-async function loadDocs() {
-  if (_docs === null) {
+async function loadDocs(force = false) {
+  if (_docs === null || force) {
     const j = await fetchJSON('/api/list');
     _docs = j.docs || [];
   }
   return _docs;
 }
 
-async function loadVersions(slug) {
-  if (!(slug in _versions)) {
+async function loadVersions(slug, force = false) {
+  if (!(slug in _versions) || force) {
     try {
       const j = await fetchJSON('/api/versions/' + slug);
       _versions[slug] = j.versions || [];
     } catch (e) {
-      _versions[slug] = [];
+      // On a forced refresh failure, keep whatever we already had rather
+      // than clobbering it to []. Only seed [] on a true first-load failure.
+      if (!(slug in _versions)) _versions[slug] = [];
     }
   }
   return _versions[slug];
