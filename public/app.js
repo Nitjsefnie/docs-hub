@@ -593,5 +593,53 @@ async function render() {
   _lastSig = currentSig(route);
 }
 
+// ─────────────────────────── poll loop ───────────────────────────
+// One global, route-aware timer. Each tick force-refreshes the current
+// screen's data and re-renders only when its signature changed. Pauses
+// while the tab is hidden; fires once immediately when the tab is reshown.
+
+const POLL_MS = 30_000;
+
+function indexFilterFocused() {
+  const el = document.activeElement;
+  return !!(el && el.closest && el.closest('.filterbar'));
+}
+
+function maybeRerender(sig) {
+  if (sig === _lastSig) return;                 // signature gate: nothing changed
+  if (parseRoute().name === 'index' && indexFilterFocused()) return; // defer mid-filter
+  render();                                     // render() re-stamps _lastSig
+}
+
+async function pollTick() {
+  if (document.visibilityState === 'hidden') return;
+  const route = parseRoute();
+  try {
+    if (route.name === 'index') {
+      await loadDocs(true);
+      maybeRerender(sigIndex());
+    } else if (route.name === 'viewer') {
+      await loadDocs(true);                      // refreshes latest_version
+      await loadVersions(route.slug, true);      // refreshes the new version object
+      maybeRerender(sigViewer(route));           // resolved DISPLAYED version only
+    } else if (route.name === 'versions') {
+      await loadDocs(true);
+      await loadVersions(route.slug, true);
+      maybeRerender(sigVersions(route.slug));
+    }
+  } catch (e) {
+    // Swallow — a failed tick is skipped, the next one recovers. Never tear
+    // the screen into the error view over a transient blip.
+  }
+}
+
+function startPolling() {
+  setInterval(pollTick, POLL_MS);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') pollTick();
+  });
+}
+
 window.addEventListener('hashchange', render);
 window.addEventListener('DOMContentLoaded', render);
+window.addEventListener('DOMContentLoaded', startPolling);
