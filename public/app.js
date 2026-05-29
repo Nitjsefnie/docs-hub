@@ -504,10 +504,13 @@ function renderError(err) {
 }
 
 // ─────────────────────────── poll signatures ───────────────────────────
-// A cheap deterministic string of exactly what each screen DISPLAYS, so the
-// poll loop re-renders only when the visible output would actually change.
+// A cheap deterministic string of the SERVER-DRIVEN state each screen
+// depends on, so the poll loop re-renders only when that data changes.
+// Local-only state (the index filter/sort in FILTER) is intentionally NOT
+// included — the poll never changes it, so it must not trigger a re-render.
 
 function sigIndex() {
+  // '|' / '\n' are safe delimiters: slugs and ISO timestamps never contain them.
   return (_docs || [])
     .map((d) => d.slug + '|' + d.latest_version + '|' + d.updated_at)
     .join('\n');
@@ -524,6 +527,7 @@ function sigVersions(slug) {
 // slug resolves to latest (bumps when a new version lands → iframe swaps).
 function sigViewer(route) {
   const doc = (_docs || []).find((d) => d.slug === route.slug);
+  // version is 1-based; ?? is safe here (0 never occurs as a pinned version).
   return String(route.version ?? (doc && doc.latest_version) ?? '?');
 }
 
