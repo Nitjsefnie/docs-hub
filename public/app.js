@@ -288,7 +288,7 @@ function renderIndex() {
   `;
 }
 
-function wireIndex() {
+function wireIndex(searchWasFocused) {
   const reroute = () => render();
   $('#f-q')?.addEventListener('input', (e) => { FILTER.q = e.target.value; reroute(); });
   $('#f-project')?.addEventListener('change', (e) => { FILTER.project = e.target.value; reroute(); });
@@ -311,7 +311,7 @@ function wireIndex() {
     Object.assign(FILTER, { q: '', project: '', agent: '', tag: '' });
     reroute();
   });
-  if (FILTER.q) {
+  if (searchWasFocused) {
     const inp = $('#f-q');
     if (inp) {
       inp.focus();
@@ -577,9 +577,11 @@ async function render() {
   } catch (e) {
     html = renderError(e);
   }
+  const searchWasFocused =
+    !!(document.activeElement && document.activeElement.id === 'f-q');
   root.innerHTML = html;
   switch (route.name) {
-    case 'index':    wireIndex(); break;
+    case 'index':    wireIndex(searchWasFocused); break;
     case 'versions': wireVersions(); break;
     case 'viewer':   wireDocViewer(); break;
   }
