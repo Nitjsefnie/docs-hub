@@ -48,6 +48,21 @@ async def get_doc(slug: str) -> Response:
     return HTMLResponse(doc["html"])
 
 
+@router.post("/doc/{slug:path}/public")
+async def set_doc_public(slug: str, body: dict = Body(...)) -> JSONResponse:
+    """Flip a slug's public flag. Auth is enforced by the middleware (agent
+    key or human cookie); an anonymous caller never reaches this handler.
+    Public docs are readable by anyone at /d/<slug>; everything else stays
+    gated."""
+    public = body.get("public")
+    if not isinstance(public, bool):
+        return JSONResponse({"ok": False, "error": "public must be a boolean"},
+                            status_code=400)
+    if not docs_repo.set_public(slug, public):
+        return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
+    return JSONResponse({"ok": True, "slug": slug, "public": public})
+
+
 @router.get("/list")
 async def api_list(project: str = "", agent: str = "") -> JSONResponse:
     docs = docs_repo.list_docs(project or None, agent or None)

@@ -371,6 +371,11 @@ function renderDocViewer(slug, requestedVersion) {
           ${isStale ? `<a class="btn accent" href="#/d/${esc(slug)}">latest →</a>` : ''}
           <a class="btn" href="#/d/${esc(slug)}/versions">log <span class="kbd">L</span></a>
           <button class="btn" id="copy-link" title="copy permalink">⎘ link</button>
+          <button class="btn ${doc.public ? 'accent' : ''}" id="toggle-public"
+                  title="${doc.public ? 'public — anyone can read /d/' + esc(slug) + ' without logging in; click to make private' : 'private — click to let anyone read /d/' + esc(slug)}">
+            ${doc.public ? '◉ public' : '○ private'}
+          </button>
+          ${doc.public ? `<button class="btn" id="copy-public" title="copy public direct URL">⎘ public url</button>` : ''}
         </div>
       </div>
       <div class="artifact-frame">
@@ -380,7 +385,7 @@ function renderDocViewer(slug, requestedVersion) {
   `;
 }
 
-function wireDocViewer() {
+function wireDocViewer(slug) {
   $('#copy-link')?.addEventListener('click', (e) => {
     const btn = e.currentTarget;
     const url = location.href;
@@ -388,6 +393,33 @@ function wireDocViewer() {
     const old = btn.innerHTML;
     btn.innerHTML = '✓ copied';
     setTimeout(() => (btn.innerHTML = old), 1200);
+  });
+  $('#copy-public')?.addEventListener('click', (e) => {
+    const btn = e.currentTarget;
+    const url = location.origin + '/d/' + slug;
+    if (navigator.clipboard) navigator.clipboard.writeText(url).catch(() => {});
+    const old = btn.innerHTML;
+    btn.innerHTML = '✓ copied';
+    setTimeout(() => (btn.innerHTML = old), 1200);
+  });
+  $('#toggle-public')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const doc = (_docs || []).find((d) => d.slug === slug);
+    if (!doc) return;
+    btn.disabled = true;
+    try {
+      const r = await fetch('/api/doc/' + slug + '/public', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json' },
+        body: JSON.stringify({ public: !doc.public }),
+      });
+      if (r.ok) {
+        await loadDocs(true);   // drop the stale flag from the cached list
+        render();
+      }
+    } finally {
+      btn.disabled = false;
+    }
   });
   const iframe = $('#artifact');
   if (iframe) {
@@ -528,7 +560,9 @@ function sigVersions(slug) {
 function sigViewer(route) {
   const doc = (_docs || []).find((d) => d.slug === route.slug);
   // version is 1-based; ?? is safe here (0 never occurs as a pinned version).
-  return String(route.version ?? (doc && doc.latest_version) ?? '?');
+  // The public flag is part of the signature so a poll picks up toggles.
+  return String(route.version ?? (doc && doc.latest_version) ?? '?') +
+    '|' + (doc && doc.public ? 'pub' : 'priv');
 }
 
 function currentSig(route) {
@@ -583,7 +617,7 @@ async function render() {
   switch (route.name) {
     case 'index':    wireIndex(searchWasFocused); break;
     case 'versions': wireVersions(); break;
-    case 'viewer':   wireDocViewer(); break;
+    case 'viewer':   wireDocViewer(route.slug); break;
   }
   document.title =
     ({

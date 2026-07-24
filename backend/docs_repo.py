@@ -74,11 +74,30 @@ def get_latest(slug: str) -> dict | None:
     return get_version(slug, row[0])
 
 
+def is_public(slug: str) -> bool:
+    """True iff the doc exists and is flagged public (anon-readable via /d/)."""
+    with db.docs_conn() as c:
+        row = c.execute("SELECT public FROM docs WHERE slug=%s",
+                        (slug,)).fetchone()
+    return bool(row and row[0])
+
+
+def set_public(slug: str, public: bool) -> bool:
+    """Set the slug's public flag. Returns False if the slug is unknown.
+    The flag lives on the docs row, so re-publishing a version never
+    touches it."""
+    with db.docs_conn() as c:
+        row = c.execute("UPDATE docs SET public=%s WHERE slug=%s RETURNING id",
+                        (public, slug)).fetchone()
+        c.commit()
+    return row is not None
+
+
 def list_docs(project: str | None = None, agent: str | None = None) -> list[dict]:
     """Newest-updated first. `agent` filters by the poster of the latest version."""
     sql = (
         "SELECT d.slug, d.title, d.tags, d.project, d.updated_at, "
-        "d.latest_version, v.posted_by, v.byte_size "
+        "d.latest_version, v.posted_by, v.byte_size, d.public "
         "FROM docs d JOIN doc_versions v "
         "ON v.doc_id=d.id AND v.version=d.latest_version"
     )
@@ -97,7 +116,7 @@ def list_docs(project: str | None = None, agent: str | None = None) -> list[dict
     return [
         {"slug": r[0], "title": r[1], "tags": r[2], "project": r[3],
          "updated_at": r[4], "latest_version": r[5], "posted_by": r[6],
-         "byte_size": r[7]}
+         "byte_size": r[7], "public": r[8]}
         for r in rows
     ]
 

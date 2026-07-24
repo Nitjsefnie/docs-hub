@@ -6,7 +6,8 @@ CREATE TABLE IF NOT EXISTS docs (
     project         TEXT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    latest_version  INT NOT NULL DEFAULT 0
+    latest_version  INT NOT NULL DEFAULT 0,
+    public          BOOLEAN NOT NULL DEFAULT false
 );
 
 CREATE TABLE IF NOT EXISTS doc_versions (

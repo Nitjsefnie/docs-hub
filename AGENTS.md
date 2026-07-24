@@ -38,6 +38,12 @@ ships via the setup bundle. This repo is the server only.
   Postgres `users` table (same credentials as the other `*.nitjsefni.eu`
   services), then an HMAC session cookie.
 - Agent auth: a shared API key (`DOCS_HUB_API_KEY`, from the environment).
+- Public docs: a sticky per-slug `public` flag on the `docs` row (default
+  false, survives re-publishes). When set, the hash-less `/d/<slug>` latest
+  route serves to anyone without auth — that is the ONLY anonymous surface.
+  `/d/<slug>/v<n>`, `/api/*` and the SPA shell stay auth-gated. Toggle via
+  `POST /api/doc/<slug>/public` (auth required) or the SPA doc-view button.
+  `db.migrate()` applies the idempotent `ALTER TABLE` at startup.
 - Served on local port 8084, behind nginx, Cloudflare-proxied.
 
 ## Development

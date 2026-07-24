@@ -15,6 +15,7 @@ db.load_dotenv(str(_REPO_ROOT / ".env"))
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    db.migrate()
     db.schema_check()
     yield
 

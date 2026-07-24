@@ -63,6 +63,16 @@ def auth_conn():
         yield conn
 
 
+def migrate() -> None:
+    """Idempotent schema migrations, applied at startup before schema_check."""
+    with docs_conn() as c:
+        c.execute(
+            "ALTER TABLE docs ADD COLUMN IF NOT EXISTS "
+            "public boolean NOT NULL DEFAULT false"
+        )
+        c.commit()
+
+
 def schema_check() -> None:
     """Fail fast at startup if the docs DB or auth DB shape is missing."""
     with docs_conn() as c:
