@@ -26,7 +26,7 @@ Build the project by executing the plan task-by-task (superpowers
 | `docs/superpowers/` | spec + plan |
 
 The agent-facing **CLI is not in this repo** — per the fleet
-canonical-scripts rule it lives at `~/.claude/scripts/docs_hub.py` and
+canonical-scripts rule it lives at `~/.agent-bundle/scripts/docs_hub.py` and
 ships via the setup bundle. This repo is the server only.
 
 ## Architecture
