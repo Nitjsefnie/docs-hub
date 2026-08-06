@@ -3,6 +3,11 @@
 Two pools, never joined:
 - docs_pool  -> the docs DB (this app's tables)
 - auth_pool  -> the shared authdb DB (read users.config for human login)
+
+Both pools check a connection's liveness before handing it out. Without that,
+a Postgres restart leaves every idle pooled connection dead and the next
+request raises OperationalError instead of reconnecting — publishes returned
+HTTP 500 for hours after the 2026-08-06 restart.
 """
 from __future__ import annotations
 
@@ -35,6 +40,7 @@ def docs_pool() -> ConnectionPool:
         _DOCS = ConnectionPool(
             os.environ["DATABASE_URL_DOCS"],
             min_size=1, max_size=8, timeout=10,
+            check=ConnectionPool.check_connection,
             kwargs={"autocommit": False},
         )
     return _DOCS
@@ -46,6 +52,7 @@ def auth_pool() -> ConnectionPool:
         _AUTH = ConnectionPool(
             os.environ["DATABASE_URL_AUTH"],
             min_size=1, max_size=4, timeout=10,
+            check=ConnectionPool.check_connection,
             kwargs={"autocommit": True},
         )
     return _AUTH
