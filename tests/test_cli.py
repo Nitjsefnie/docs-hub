@@ -2,10 +2,17 @@ import os, subprocess, sys, threading, time
 from pathlib import Path
 import uvicorn
 
-CLI = Path.home() / ".claude" / "scripts" / "docs_hub.py"
+CLI = Path.home() / ".agent-bundle" / "scripts" / "docs_hub.py"
+
+_SERVER = None
 
 
 def _spawn_server():
+    """Start the test server once per session. The thread is a daemon and is
+    never joined, so re-binding port 8099 for a second test always failed."""
+    global _SERVER
+    if _SERVER is not None:
+        return _SERVER
     from backend.app import app
     cfg = uvicorn.Config(app, host="127.0.0.1", port=8099, log_level="error")
     server = uvicorn.Server(cfg)
@@ -13,6 +20,7 @@ def _spawn_server():
     for _ in range(50):
         time.sleep(0.1)
         if server.started:
+            _SERVER = server
             return server
     raise RuntimeError("server did not start")
 
