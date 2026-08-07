@@ -5,3 +5,6 @@ __pycache__/
 .venv/
 store/*
 !store/.gitkeep
+
+# never commit: the secrecy-check literal list
+.secrecy-literals
