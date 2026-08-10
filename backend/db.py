@@ -39,7 +39,7 @@ def docs_pool() -> ConnectionPool:
     if _DOCS is None:
         _DOCS = ConnectionPool(
             os.environ["DATABASE_URL_DOCS"],
-            min_size=1, max_size=8, timeout=10,
+            min_size=1, max_size=8, timeout=10, open=True,
             check=ConnectionPool.check_connection,
             kwargs={"autocommit": False},
         )
@@ -51,11 +51,25 @@ def auth_pool() -> ConnectionPool:
     if _AUTH is None:
         _AUTH = ConnectionPool(
             os.environ["DATABASE_URL_AUTH"],
-            min_size=1, max_size=4, timeout=10,
+            min_size=1, max_size=4, timeout=10, open=True,
             check=ConnectionPool.check_connection,
             kwargs={"autocommit": True},
         )
     return _AUTH
+
+
+def close_pools() -> None:
+    """Close both pools and reset the globals so a later call rebuilds them.
+
+    Pool worker threads are non-daemon, so an unclosed pool stalls interpreter
+    shutdown 5s per thread, and its still-open connections block dropping the
+    database. Safe to call when no pool was ever opened.
+    """
+    global _DOCS, _AUTH
+    for pool in (_DOCS, _AUTH):
+        if pool is not None:
+            pool.close()
+    _DOCS = _AUTH = None
 
 
 @contextmanager

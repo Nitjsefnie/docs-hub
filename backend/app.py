@@ -18,6 +18,7 @@ async def lifespan(app: FastAPI):
     db.migrate()
     db.schema_check()
     yield
+    db.close_pools()
 
 
 app = FastAPI(title="docs-hub", docs_url=None, redoc_url=None, lifespan=lifespan)

@@ -30,7 +30,11 @@ def _test_env(tmp_path_factory):
     os.environ["DOCS_HUB_API_KEY"] = "test-api-key"
     os.environ["COOKIE_SECURE"] = "0"
     yield
-    subprocess.run(["dropdb", "--if-exists", "docs_test"], check=False)
+    # Close the pools first: their open connections would make dropdb fail,
+    # leaving docs_test behind, and their worker threads stall interpreter exit.
+    from backend import db
+    db.close_pools()
+    subprocess.run(["dropdb", "--if-exists", "docs_test"], check=True)
 
 
 @pytest.fixture(autouse=True)
