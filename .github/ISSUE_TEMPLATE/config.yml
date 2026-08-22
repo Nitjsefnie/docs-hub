@@ -1,0 +1,8 @@
+# Bug reports use the form. Blank issues stay enabled because CONTRIBUTING.md
+# invites "unsure whether this is a bug? open an issue and ask", and that
+# question does not fit the bug form.
+blank_issues_enabled: true
+contact_links:
+  - name: Contributing guide
+    url: https://github.com/Nitjsefnie/docs-hub/blob/master/CONTRIBUTING.md
+    about: How to run the suite, the invariants that reject patches, and the disclosure rules for agent-written contributions.

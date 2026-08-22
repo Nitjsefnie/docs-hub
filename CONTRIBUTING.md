@@ -100,8 +100,13 @@ at startup and is what upgrades a deployed instance.
 
 ## Pull requests
 
-Small and single-purpose beats large and comprehensive. In the description,
-include what changed and why, and the actual output of the tests you ran.
+Small and single-purpose beats large and comprehensive. GitHub fills the
+description from [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md)
+— fill that form in rather than replacing it; each section says whether it
+can be dropped. Bug reports use
+[`.github/ISSUE_TEMPLATE/bug_report.md`](.github/ISSUE_TEMPLATE/bug_report.md).
+In the description, include what changed and why, and the actual output of
+the tests you ran.
 For anything touching auth, versioning, or delete, say explicitly what you
 tried that *should* fail and confirm it did.
 
