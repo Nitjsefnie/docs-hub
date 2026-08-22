@@ -1,10 +1,74 @@
-.env
-__pycache__/
-*.pyc
-.pytest_cache/
-.venv/
+# Deny by default: nothing is tracked unless it is named back below.
+# A `!` rule can never reach inside a directory that is still ignored, so
+# every kept directory is re-opened, its contents denied again, then the
+# files named back with a glob scoped to that directory.
+#
+# Never named back, deliberately: .env (real credentials) and
+# .secrecy-literals (the forbidden-literal list scripts/secrecy-check.sh
+# reads). Both stay local; both are covered by the leading `*`.
+*
+
+# --- root files -------------------------------------------------------
+!.gitignore
+!.env.example
+!AGENTS.md
+!CLAUDE.md
+!CONTRIBUTING.md
+!LICENSE
+!README.md
+!pyproject.toml
+!requirements.txt
+
+# --- GitHub templates -------------------------------------------------
+!.github/
+.github/*
+!.github/PULL_REQUEST_TEMPLATE.md
+!.github/ISSUE_TEMPLATE/
+.github/ISSUE_TEMPLATE/*
+!.github/ISSUE_TEMPLATE/*.md
+!.github/ISSUE_TEMPLATE/*.yml
+
+# --- application ------------------------------------------------------
+!backend/
+backend/*
+!backend/*.py
+!backend/*.sql
+
+!public/
+public/*
+!public/*.html
+!public/*.js
+!public/*.css
+
+!scripts/
+scripts/*
+!scripts/*.sh
+!scripts/pre-push
+
+!tests/
+tests/*
+!tests/*.py
+
+!deploy/
+deploy/*
+!deploy/*.service
+!deploy/*.conf
+
+# --- docs -------------------------------------------------------------
+!docs/
+docs/*
+!docs/superpowers/
+docs/superpowers/*
+!docs/superpowers/plans/
+docs/superpowers/plans/*
+!docs/superpowers/plans/*.md
+!docs/superpowers/plans/*.html
+!docs/superpowers/specs/
+docs/superpowers/specs/*
+!docs/superpowers/specs/*.md
+!docs/superpowers/specs/*.html
+
+# --- runtime blob store: the directory ships, its contents never do ----
+!store/
 store/*
 !store/.gitkeep
-
-# never commit: the secrecy-check literal list
-.secrecy-literals
