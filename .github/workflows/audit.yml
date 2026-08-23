@@ -1,0 +1,136 @@
+name: audit
+
+# Dependency vulnerability gate, one job per ecosystem.
+#
+# pip-audit resolves each requirements file to its full transitive tree and
+# checks every resolved version against the PyPI advisory database and OSV.
+# Resolution is the point rather than reading the pinned lines: fastapi,
+# uvicorn and psycopg drag in dependency trees of their own, and that is where
+# an advisory lands.
+#
+# WHY THE CRON IS THE IMPORTANT TRIGGER. Every other gate here answers "did
+# this commit break something", so push is the natural trigger. This one
+# answers "is a version we froze months ago still safe", and that answer
+# changes when a stranger publishes an advisory, with no commit here to hang
+# it on. A push-only audit would report clean forever on a quiet branch. The
+# push trigger is the lesser half: it catches a bad pin at the moment it is
+# introduced, while the diff is on screen.
+#
+# This gate FAILS the build rather than filing an advisory, which is the same
+# stance as lint and types: a red gate a human must look at beats a
+# notification that accumulates unread. When a fix genuinely is not available
+# yet, add the advisory to --ignore-vuln WITH a comment saying why and what
+# would clear it — never silence the whole gate.
+
+on:
+  push:
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
+      - '.gitignore'
+  pull_request:
+  schedule:
+    # 04:12 UTC daily. Off the hour deliberately: the top of the hour is when
+    # every cron on GitHub fires at once and jobs queue.
+    - cron: '12 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pip-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing in this workflow pushes. Leaving the job token in
+          # .git/config lets any later step — or anything a dependency pulls
+          # in — reuse it.
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install pip-audit
+        run: |
+          python -m pip install --upgrade pip
+          pip install pip-audit==2.10.1
+
+      - name: Audit the Python dependencies
+        # All three requirements files in one invocation so a package
+        # constrained by two of them resolves once, consistently — the same
+        # way an install would see it. requirements.txt is the deployed
+        # runtime; the other two are the CI toolchain, which runs with a
+        # repository token and is a supply-chain surface even though it never
+        # ships.
+        #
+        # No --ignore-vuln entries at present. Each one added here must carry
+        # a comment naming the advisory, why it is not fixable, and what would
+        # let it be removed.
+        #
+        # THE RETRY IS NARROW ON PURPOSE. pip-audit resolves against PyPI and
+        # the advisory database over the network, and a reset connection
+        # produces the same exit status as a real finding. A blanket retry
+        # would re-run a genuine vulnerability three times before reporting
+        # it, and a gate that goes red for reasons unrelated to its subject is
+        # one people learn to ignore. So this retries ONLY when the output
+        # carries a transport error, and reports anything else immediately and
+        # verbatim.
+        run: |
+          for attempt in 1 2 3; do
+            if pip-audit \
+                 --progress-spinner off \
+                 --requirement requirements.txt \
+                 --requirement requirements-dev.txt \
+                 --requirement requirements-test.txt \
+                 > audit.out 2>&1; then
+              cat audit.out
+              exit 0
+            fi
+
+            if grep -qiE 'connection (aborted|reset|error)|read timed out|temporary failure in name resolution' audit.out; then
+              echo "attempt $attempt: transport failure talking to PyPI, retrying"
+              tail -n 5 audit.out
+              sleep $(( attempt * 15 ))
+              continue
+            fi
+
+            echo "pip-audit reported findings:" >&2
+            cat audit.out >&2
+            exit 1
+          done
+
+          echo "pip-audit could not reach PyPI after 3 attempts:" >&2
+          cat audit.out >&2
+          exit 1
+
+  npm-audit:
+    # The npm surface is the eslint toolchain only — nothing in package.json
+    # is served to a browser. It still runs in CI with a repository token, so
+    # it gets the same treatment as the Python toolchain.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: npm audit
+        # --audit-level=low: the tree is 71 packages of linter, so there is no
+        # volume argument for tolerating known-vulnerable versions here.
+        run: npm audit --audit-level=low

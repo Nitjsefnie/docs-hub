@@ -1,0 +1,54 @@
+name: types
+
+# pyright over backend/. The suites are excluded in pyrightconfig.json: they
+# subscript psycopg's Optional-typed fetchone() on purpose — a query that
+# returns no row is exactly the failure the test is asserting against, and a
+# type checker can only ever call that an error.
+#
+# pythonPlatform is Linux, not "All": this is a server that runs on one
+# platform behind nginx, and there are no Windows branches to type-check.
+
+on:
+  push:
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
+      - '.gitignore'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: types-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pyright:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install the type checker and the runtime dependencies
+        # fastapi, starlette and psycopg carry the types this check is about:
+        # without them installed pyright reports unresolved imports and then
+        # treats every value that came from them as Unknown.
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: pyright
+        run: pyright

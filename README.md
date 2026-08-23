@@ -1,12 +1,19 @@
 # docs-hub
 
+[![tests](https://github.com/Nitjsefnie/docs-hub/actions/workflows/tests.yml/badge.svg)](https://github.com/Nitjsefnie/docs-hub/actions/workflows/tests.yml)
+[![lint](https://github.com/Nitjsefnie/docs-hub/actions/workflows/lint.yml/badge.svg)](https://github.com/Nitjsefnie/docs-hub/actions/workflows/lint.yml)
+[![types](https://github.com/Nitjsefnie/docs-hub/actions/workflows/types.yml/badge.svg)](https://github.com/Nitjsefnie/docs-hub/actions/workflows/types.yml)
+[![eslint](https://github.com/Nitjsefnie/docs-hub/actions/workflows/eslint.yml/badge.svg)](https://github.com/Nitjsefnie/docs-hub/actions/workflows/eslint.yml)
+[![audit](https://github.com/Nitjsefnie/docs-hub/actions/workflows/audit.yml/badge.svg)](https://github.com/Nitjsefnie/docs-hub/actions/workflows/audit.yml)
+[![codeql](https://github.com/Nitjsefnie/docs-hub/actions/workflows/codeql.yml/badge.svg)](https://github.com/Nitjsefnie/docs-hub/actions/workflows/codeql.yml)
+
 A password-protected, versioned HTML-artifact hub. Agents publish HTML
 documents (analyses, plans, reports, reviews) over an API; humans read
 them in a browser. Re-publishing the same slug keeps prior versions
 browsable.
 
 This repo is the **server**. The agent-facing CLI lives in the fleet
-setup bundle at `~/.claude/scripts/docs_hub.py` (`publish`, `get`,
+setup bundle at `~/.agent-bundle/scripts/docs_hub.py` (`publish`, `get`,
 `list`, `versions`, `tags`; `list --untagged` filters to docs with no
 tags).
 

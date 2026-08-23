@@ -96,7 +96,34 @@ at startup and is what upgrades a deployed instance.
 - **SQL** — parameterised (`%s`) always. Singular table names.
 - **Frontend** — served from `public/`, no build step. Keep it that way.
 - **Naming** — `snake_case` in Python, `camelCase` in JS.
-- There is no linter or formatter config. Match the surrounding file.
+- **Linters, not formatters.** There is no formatter config and no style
+  bot — match the surrounding file. What CI does enforce is `pycodestyle`
+  (config in `setup.cfg`), `pylint` (`.pylintrc`), `pyright` over
+  `backend/` (`pyrightconfig.json`) and `eslint` over `public/`
+  (`eslint.config.mjs`). Every disable in those files names the pattern it
+  is there for; add one the same way rather than raising a threshold.
+
+## CI
+
+Seven workflows in `.github/workflows/`, all of them runnable locally:
+
+| Gate | What it runs | Locally |
+|---|---|---|
+| `tests` | the suite against Postgres 16 and 17, plus a coverage job with a 90% floor | `.venv/bin/pytest -v` |
+| `lint` | pycodestyle, pylint | `git ls-files '*.py' \| xargs pycodestyle` / `... \| xargs pylint --rcfile=.pylintrc` |
+| `types` | pyright over `backend/` | `pyright` |
+| `eslint` | eslint over `public/` | `npm ci && npx eslint public` |
+| `audit` | pip-audit over all three requirements files, `npm audit`; also on a daily cron | `pip-audit -r requirements.txt -r requirements-dev.txt -r requirements-test.txt` |
+| `codeql` | security analysis of the Python and JavaScript, weekly cron | — (GitHub-hosted) |
+| `actionlint` | actionlint + zizmor over the workflows themselves | `actionlint .github/workflows/*.yml && zizmor .github/workflows/` |
+
+`pip install -r requirements-dev.txt -r requirements-test.txt` gets the
+Python toolchain. `package.json` exists only to pin eslint — **it is not a
+build step**, and `public/` is still served byte-for-byte.
+
+`tests/test_cli.py` skips itself when the agent CLI is not installed (it
+ships with the fleet bundle, not this repo), which is why CI runs 74 tests
+and a bundle-equipped machine runs 76.
 
 ## Pull requests
 

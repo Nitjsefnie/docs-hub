@@ -56,6 +56,14 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 Tests build an isolated `docs_test` database from `backend/schema.sql`
 and a temp blob store — see `tests/conftest.py`. No live network.
 
+CI runs seven gates on every push — `tests` (the suite against Postgres
+16 and 17, plus a 90% coverage floor), `lint` (pycodestyle, pylint),
+`types` (pyright over `backend/`), `eslint` (over `public/`), `audit`
+(pip-audit, npm audit), `codeql`, and `actionlint` (actionlint + zizmor
+over the workflows). All of them are runnable locally; the table in
+CONTRIBUTING.md gives the exact command for each. Run the ones your
+change touches before pushing rather than using CI as the first check.
+
 ## Conventions
 
 - TDD: write the failing test first, then the minimal implementation.

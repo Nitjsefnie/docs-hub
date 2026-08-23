@@ -1,0 +1,50 @@
+name: eslint
+
+# The SPA in public/ is 680 lines of plain browser JavaScript served
+# byte-for-byte with no build step, which is the invariant CONTRIBUTING.md
+# states and this gate does not change: package.json exists only to pin the
+# linter, and nothing it installs is ever shipped.
+#
+# No build step is also exactly why the gate matters. There is no bundler and
+# no module system to catch a typo'd identifier, so an undeclared variable or
+# a dead assignment reaches the browser and shows up as a blank screen.
+
+on:
+  push:
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
+      - '.gitignore'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eslint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  eslint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install the linter
+        # `npm ci`, not `npm install`: it installs the lockfile exactly and
+        # fails if package.json and the lock have drifted apart, so the gate
+        # cannot quietly run a different eslint than the one that was reviewed.
+        run: npm ci
+
+      - name: eslint
+        run: npx eslint public
