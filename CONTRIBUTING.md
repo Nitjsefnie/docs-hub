@@ -105,7 +105,7 @@ at startup and is what upgrades a deployed instance.
 
 ## CI
 
-Seven workflows in `.github/workflows/`, all of them runnable locally:
+Seven gates in `.github/workflows/`, all of them runnable locally:
 
 | Gate | What it runs | Locally |
 |---|---|---|
@@ -121,9 +121,20 @@ Seven workflows in `.github/workflows/`, all of them runnable locally:
 Python toolchain. `package.json` exists only to pin eslint — **it is not a
 build step**, and `public/` is still served byte-for-byte.
 
-`tests/test_cli.py` skips itself when the agent CLI is not installed (it
-ships with the fleet bundle, not this repo), which is why CI runs 74 tests
-and a bundle-equipped machine runs 76.
+`tests/test_cli.py` no longer skips anywhere: the client lives in this
+repository as `docs_hub_cli/` and the file drives it as
+`python -m docs_hub_cli.cli`. Its end-to-end tests run in a subprocess and
+so measure no coverage — the in-process cover for the client, including the
+failure paths a real server will not produce on demand, is in
+`tests/test_cli_unit.py`.
+
+Two further workflows are the **release chain**, not gates: `tag` watches
+`docs_hub_cli/__init__.py` on `master`, waits for every other check on the
+commit, pushes `v<version>`, and then dispatches `release` — which rebuilds,
+re-runs the suite and publishes the wheel with a `SHA256SUMS` file. The
+dispatch is not redundant: a tag pushed with the built-in `GITHUB_TOKEN`
+triggers no workflow at all, so without it the tag lands and no release is
+ever cut. Neither runs on a pull request; there is nothing to run locally.
 
 ## Pull requests
 
