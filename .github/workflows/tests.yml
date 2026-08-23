@@ -7,9 +7,9 @@ name: tests
 # but it is developed against whatever Postgres the box happens to have, and
 # the deployed one (17) is not the only one it should work on.
 #
-# tests/test_cli.py skips itself here: the agent-facing CLI ships with the
-# fleet setup bundle rather than this repo (see AGENTS.md), so the file it
-# drives does not exist on a runner.
+# tests/test_cli.py runs everywhere now: the agent-facing CLI lives in this
+# repository as docs_hub_cli/ and is driven as `python -m docs_hub_cli.cli`,
+# so there is nothing left for a runner to be missing.
 
 on:
   push:
@@ -162,7 +162,7 @@ jobs:
         # collected) and anything above 2 is that case; 1 is "tests failed".
         run: |
           set +e
-          python -m coverage run --source=backend -m pytest -q -ra
+          python -m coverage run --source=backend,docs_hub_cli -m pytest -q -ra
           rc=$?
           set -e
           if [ "$rc" -gt 1 ]; then
@@ -195,8 +195,10 @@ jobs:
 
       - name: Coverage gate
         if: ${{ !cancelled() && steps.measure.conclusion == 'success' }}
-        # A RATCHET, not a target. 90 sits under the 92.6% measured when this
-        # landed (tests/test_cli.py skipped, as it is on a runner), so ordinary
-        # churn stays green and a real regression goes red. Raise the floor by
-        # hand as coverage climbs — never lower it to make a red build green.
+        # A RATCHET, not a target. 90 sits under the 94.4% backend +
+        # docs_hub_cli measures today, so ordinary churn stays green and a real
+        # regression goes red. Raise the floor by hand as coverage climbs —
+        # never lower it to make a red build green, and never widen the source
+        # list to let new code in under a floor it did not earn: docs_hub_cli
+        # reaches 98.4% on its own before it was added here.
         run: python -m coverage report --fail-under=90 --precision=1
