@@ -50,7 +50,7 @@ async function loadVersions(slug, force = false) {
     try {
       const j = await fetchJSON('/api/versions/' + slug);
       _versions[slug] = j.versions || [];
-    } catch (e) {
+    } catch {
       // On a forced refresh failure, keep whatever we already had rather
       // than clobbering it to []. Only seed [] on a true first-load failure.
       if (!(slug in _versions)) _versions[slug] = [];
@@ -62,7 +62,7 @@ async function loadVersions(slug, force = false) {
 async function loadWhoami() {
   if (_whoami === null) {
     try { _whoami = await fetchJSON('/api/whoami'); }
-    catch (e) { _whoami = { user_id: null }; }
+    catch { _whoami = { user_id: null }; }
   }
   return _whoami;
 }
@@ -427,7 +427,7 @@ function wireDocViewer(slug) {
       try {
         const t = iframe.contentDocument && iframe.contentDocument.title;
         if (t) document.title = t + ' · docs';
-      } catch (e) { /* cross-origin fallback: keep the slug title */ }
+      } catch { /* cross-origin fallback: keep the slug title */ }
     });
   }
   document.addEventListener('keydown', _docKeydown);
@@ -591,7 +591,8 @@ async function render() {
   document.removeEventListener('keydown', _docKeydown);
   const route = parseRoute();
   const root = $('#app');
-  let html = '';
+  // No initializer: every branch below, including the catch, assigns it.
+  let html;
   try {
     await loadWhoami();
     if (route.name === 'index') {
@@ -663,7 +664,7 @@ async function pollTick() {
       await loadVersions(route.slug, true);
       maybeRerender(sigVersions(route.slug));
     }
-  } catch (e) {
+  } catch {
     // Swallow — a failed tick is skipped, the next one recovers. Never tear
     // the screen into the error view over a transient blip.
   }

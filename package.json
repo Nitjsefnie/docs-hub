@@ -1,0 +1,15 @@
+{
+  "name": "docs-hub-frontend-lint",
+  "version": "0.0.0",
+  "private": true,
+  "description": "CI lint tooling for public/. Not a build step: nothing here is bundled, minified or shipped -- public/ is served byte-for-byte.",
+  "license": "MIT",
+  "scripts": {
+    "lint": "eslint public"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.9.0",
+    "globals": "17.11.0"
+  }
+}
