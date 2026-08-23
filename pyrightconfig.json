@@ -2,7 +2,8 @@
     "typeCheckingMode": "basic",
     "pythonVersion": "3.13",
     "include": [
-        "backend"
+        "backend",
+        "docs_hub_cli"
     ],
     "exclude": [
         "**/__pycache__",
