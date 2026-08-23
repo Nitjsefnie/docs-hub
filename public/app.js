@@ -8,10 +8,20 @@
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
+// A slug reaches this file from the URL hash, so it is attacker-controllable
+// even though the server only ever mints slugs matching [a-z0-9/_-]. Encode it
+// per SEGMENT — '/' is a legitimate separator inside a slug — before putting it
+// in a URL, so a crafted one cannot append a query string or a fragment to a
+// request the reader's browser makes with the reader's cookie.
+const apiSlug = (slug) => String(slug).split('/').map(encodeURIComponent).join('/');
+
 // ─────────────────────────── data layer ───────────────────────────
 
 let _docs = null;        // cached GET /api/list
-const _versions = {};    // slug → GET /api/versions/<slug>
+const _versions = new Map();  // slug → GET /api/versions/<slug>
+                              // a Map, not an object literal: the slug comes
+                              // from the URL hash, and `obj[slug] = …` with a
+                              // slug of `__proto__` writes the prototype.
 let _whoami = null;      // cached GET /api/whoami
 let _lastSig = null;     // signature of the currently-rendered screen (poll gate)
 
@@ -46,17 +56,17 @@ async function loadDocs(force = false) {
 }
 
 async function loadVersions(slug, force = false) {
-  if (!(slug in _versions) || force) {
+  if (!_versions.has(slug) || force) {
     try {
-      const j = await fetchJSON('/api/versions/' + slug);
-      _versions[slug] = j.versions || [];
+      const j = await fetchJSON('/api/versions/' + apiSlug(slug));
+      _versions.set(slug, j.versions || []);
     } catch {
       // On a forced refresh failure, keep whatever we already had rather
       // than clobbering it to []. Only seed [] on a true first-load failure.
-      if (!(slug in _versions)) _versions[slug] = [];
+      if (!_versions.has(slug)) _versions.set(slug, []);
     }
   }
-  return _versions[slug];
+  return _versions.get(slug);
 }
 
 async function loadWhoami() {
@@ -324,7 +334,7 @@ function renderDocViewer(slug, requestedVersion) {
   const doc = (_docs || []).find((d) => d.slug === slug);
   if (!doc) return renderNotFound('/d/' + slug);
 
-  const versions = _versions[slug] || [];
+  const versions = _versions.get(slug) || [];
   const latest = doc.latest_version;
   const ver = requestedVersion ?? latest;
   const v = versions.find((x) => x.version === ver);
@@ -379,7 +389,7 @@ function renderDocViewer(slug, requestedVersion) {
         </div>
       </div>
       <div class="artifact-frame">
-        <iframe id="artifact" sandbox="allow-scripts allow-same-origin" src="/d/${esc(slug)}/v${v.version}"></iframe>
+        <iframe id="artifact" sandbox="allow-scripts allow-same-origin" src="/d/${esc(apiSlug(slug))}/v${v.version}"></iframe>
       </div>
     </div>
   `;
@@ -396,7 +406,7 @@ function wireDocViewer(slug) {
   });
   $('#copy-public')?.addEventListener('click', (e) => {
     const btn = e.currentTarget;
-    const url = location.origin + '/d/' + slug;
+    const url = location.origin + '/d/' + apiSlug(slug);
     if (navigator.clipboard) navigator.clipboard.writeText(url).catch(() => {});
     const old = btn.innerHTML;
     btn.innerHTML = '✓ copied';
@@ -408,7 +418,7 @@ function wireDocViewer(slug) {
     if (!doc) return;
     btn.disabled = true;
     try {
-      const r = await fetch('/api/doc/' + slug + '/public', {
+      const r = await fetch('/api/doc/' + apiSlug(slug) + '/public', {
         method: 'POST',
         headers: { 'content-type': 'application/json', accept: 'application/json' },
         body: JSON.stringify({ public: !doc.public }),
@@ -443,7 +453,7 @@ const _docKeydown = (e) => {
 function renderVersions(slug) {
   const doc = (_docs || []).find((d) => d.slug === slug);
   if (!doc) return renderNotFound('/d/' + slug + '/versions');
-  const versions = _versions[slug] || [];
+  const versions = _versions.get(slug) || [];
   const latest = doc.latest_version;
 
   const crumbs = [
@@ -549,7 +559,7 @@ function sigIndex() {
 }
 
 function sigVersions(slug) {
-  return (_versions[slug] || [])
+  return (_versions.get(slug) || [])
     .map((v) => v.version + '|' + v.sha256)
     .join('\n');
 }

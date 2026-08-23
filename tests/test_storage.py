@@ -14,6 +14,22 @@ def test_invalid_slugs():
         assert not storage.is_valid_slug(s), s
 
 
+def test_invalid_slugs_cover_every_traversal_shape():
+    # CodeQL reports blob_path's os.path.join as py/path-injection because it
+    # cannot see through is_valid_slug, which is the sanitizer. These are the
+    # inputs that would make the alert real if that regex ever loosened, so
+    # they are asserted here rather than argued about in a dismissal comment.
+    for s in ("../etc/passwd", "a/../../b", "/absolute", "a/./b", "..",
+              "a\\..\\b", "a%2f..%2fb", "a\x00b", "~/x", "a//b", " a"):
+        assert not storage.is_valid_slug(s), s
+
+
+def test_blob_path_rejects_traversal():
+    for s in ("../etc/passwd", "/absolute", "a/../../b"):
+        with pytest.raises(ValueError):
+            storage.blob_path(s, 1)
+
+
 def test_store_and_read_blob():
     html = b"<!doctype html><h1>hi</h1>"
     path, size, digest = storage.store_blob("analyst/doc", 1, html)
