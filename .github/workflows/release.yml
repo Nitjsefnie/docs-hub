@@ -1,0 +1,153 @@
+name: release
+
+# Publishes the `docs-hub-cli` wheel a consumer installs. The checksum file is
+# not optional decoration: the fleet setup bundle fetches the newest release
+# and has no other way to prove it got the artifact this workflow built, so
+# SHA256SUMS ships beside the wheel and the installer verifies against it
+# before installing.
+#
+# Only the CLIENT ships. pyproject.toml lists `packages = ["docs_hub_cli"]`
+# explicitly, so the server in backend/ — its schema, its session secret
+# handling — is not in the wheel even though it lives in the same repository.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # The suite below is not unit-testable in isolation: tests/conftest.py
+    # drops and recreates a real `docs_test` database from backend/schema.sql
+    # and runs everything against it. Publishing without running it would mean
+    # shipping a client whose end-to-end agreement with the server was never
+    # checked on this commit, so the release job carries the same Postgres the
+    # tests job does, on the version the deployment runs.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
+
+    env:
+      # conftest.py connects with `postgresql:///docs_test` and shells out to
+      # dropdb/createdb/psql. Both routes are libpq, so these four variables
+      # point the whole suite at the service container.
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: postgres
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing in this job pushes. Leaving the token in
+          # .git/config lets any later step reuse it.
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Install the Postgres client
+        # The suite calls dropdb/createdb/psql directly. The runner image does
+        # ship a client, but which major version is an image detail that has
+        # changed before — installing it makes the dependency explicit.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client
+
+      - name: Install the build backend and the server's dependencies
+        # requirements.txt is the SERVER's: the suite boots the FastAPI app on
+        # a local port and drives the CLI against it. The client itself
+        # declares no dependencies, which is the property the wheel ships.
+        run: |
+          python -m pip install --upgrade pip build
+          python -m pip install -r requirements.txt
+
+      - name: Install the package itself
+        # For the suite, not for the build: the moment the client gains a
+        # runtime dependency, an uninstalled package dies at import — taking
+        # the release with it, before anything is built.
+        run: pip install .
+
+      - name: Run the suite before publishing anything
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python -m pytest -q -ra
+
+      - name: Build the wheel
+        run: python -m build --wheel
+
+      - name: Prove the wheel is the client and nothing else
+        # `packages = ["docs_hub_cli"]` in pyproject.toml exists to keep the
+        # server out of a client wheel. Nothing else checks that: switch it to
+        # auto-discovery and the build still succeeds, publishing backend/ --
+        # its schema and its credential handling -- to anyone who pip installs
+        # the CLI. Assert the property here, where it is about to be shipped.
+        run: |
+          python3 - <<'EOF'
+          import sys, zipfile, glob
+          names = zipfile.ZipFile(sorted(glob.glob("dist/*.whl"))[-1]).namelist()
+          tops = {n.split("/")[0] for n in names if "/" in n}
+          extra = tops - {"docs_hub_cli"} - {n for n in tops
+                                             if n.endswith(".dist-info")}
+          if extra:
+              sys.exit(f"the wheel ships more than the client: {sorted(extra)}")
+          print(f"wheel contents: {sorted(tops)}")
+          EOF
+
+      - name: Publish checksums beside the wheel
+        working-directory: dist
+        # `--` so a wheel whose name starts with a dash cannot be read as
+        # an option (shellcheck SC2035).
+        run: sha256sum -- *.whl > SHA256SUMS
+
+      - name: Attach the wheel and its checksums to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # `gh`, not a third-party action. This is the one job here holding
+        # contents: write, so every action it runs is code with permission
+        # to publish under this repo's name — and `gh` is preinstalled on
+        # the runner and maintained by GitHub. Dropping the dependency is a
+        # smaller supply chain for the step that needs it least.
+        #
+        # Both branches exist because the two triggers differ: a tag push
+        # creates the release, while a workflow_dispatch rerun finds it
+        # already there and must replace the assets rather than fail.
+        run: |
+          case "$GITHUB_REF" in
+            refs/tags/*) tag="${GITHUB_REF#refs/tags/}" ;;
+            *)
+              echo "Not a tag ref ($GITHUB_REF); nothing to publish." >&2
+              echo "Push a v* tag — .github/workflows/tag.yml does that" >&2
+              echo "automatically when __version__ changes." >&2
+              exit 1
+              ;;
+          esac
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag exists; replacing its assets."
+            gh release upload "$tag" dist/*.whl dist/SHA256SUMS --clobber
+          else
+            gh release create "$tag" --title "$tag" --generate-notes \
+              dist/*.whl dist/SHA256SUMS
+          fi
+          echo "Published $tag."
