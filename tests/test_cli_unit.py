@@ -341,13 +341,17 @@ def test_publish_reports_a_200_that_is_not_ok(tmp_path, monkeypatch, capsys):
     assert "ERROR:" in capsys.readouterr().err
 
 
-def test_publish_of_a_missing_file_raises_before_any_request(monkeypatch, tmp_path):
-    # Unhandled by design: the traceback names the path, and the process exits
-    # 1 (see tests/test_cli.py for the exit code as a subprocess observes it).
+def test_publish_of_a_missing_file_reports_the_path_and_sends_nothing(
+        monkeypatch, tmp_path, capsys):
+    # The same one-line shape every other publish failure uses: no traceback,
+    # and nothing is sent, since the read happens before the request.
+    missing = tmp_path / "nope.html"
     tr = _Transport((200, _json({"ok": True})))
-    with pytest.raises(FileNotFoundError):
-        _main(monkeypatch, tr, "publish", str(tmp_path / "nope.html"),
-              "--slug", "a", "--title", "T", "--from", "analyst")
+    assert _main(monkeypatch, tr, "publish", str(missing),
+                 "--slug", "a", "--title", "T", "--from", "analyst") == 1
+    err = capsys.readouterr().err
+    assert err.startswith("ERROR: "), err
+    assert str(missing) in err, err
     assert not tr.calls
 
 

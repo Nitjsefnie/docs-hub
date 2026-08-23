@@ -144,8 +144,15 @@ def _multipart(fields: dict, file_field: str, filename: str,
 
 
 def cmd_publish(args: argparse.Namespace) -> int:
-    with open(args.file, "rb") as f:
-        html = f.read()
+    try:
+        with open(args.file, "rb") as f:
+            html = f.read()
+    except OSError as e:
+        # One line, like every other failure here — a traceback for a
+        # mistyped path tells the operator nothing the message does not.
+        print(f"ERROR: cannot read {args.file}: {e.strerror}",
+              file=sys.stderr)
+        return 1
     fields = {"slug": args.slug, "title": args.title,
               "tags": args.tags or "", "project": args.project or "",
               "from": getattr(args, "from")}
