@@ -1,0 +1,34 @@
+[MASTER]
+ignore-paths=^\.venv/.*$,^store/.*$,^node_modules/.*$
+
+# Every disable below is a pattern this codebase uses deliberately, not a
+# finding waved through. The gate exists for real defects; a rule the code
+# structurally cannot satisfy is the one that trains people to ignore output.
+# Real defects the gate found on its first run -- an unused import, an open()
+# with no encoding, a lifespan parameter shadowing the app it is attached to,
+# subprocess.run with no explicit check -- were fixed, not listed here.
+[MESSAGES CONTROL]
+disable=
+    line-too-long,
+    missing-function-docstring,
+    missing-module-docstring,
+    missing-class-docstring,
+    invalid-name,
+# The pools are module-level singletons behind lazy getters: `global` is how
+# a first caller installs one. See backend/db.py.
+    global-statement,
+# Deferred imports are load-bearing here, not laziness: tests/conftest.py must
+# set DATABASE_URL_* and STORE_ROOT in the environment BEFORE backend.db is
+# imported, because import time is when the pool configuration is read.
+    import-outside-toplevel,
+# Route handlers and the repository layer take one parameter per column;
+# collapsing them into a dict would move the argument checking out of the
+# signature and into the body, where nothing verifies it.
+    duplicate-code
+
+# Metrics, raised rather than disabled: a handler with eight query filters is
+# fine, a handler with twenty is a real smell and should still go red.
+max-args=10
+max-positional-arguments=10
+max-locals=25
+max-attributes=15

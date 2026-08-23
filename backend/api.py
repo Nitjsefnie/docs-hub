@@ -86,7 +86,7 @@ _FILTER_KEYS = ("slug", "project", "author", "tag", "q",
 
 
 @router.post("/delete")
-async def delete(request: Request,
+async def delete(_request: Request,
                  body: dict = Body(default={})) -> JSONResponse:
     """Delete whole docs by filter. Two-step: a call with no `confirm_token`
     previews and returns a token; a call echoing a valid token executes.

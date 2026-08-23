@@ -1,4 +1,3 @@
-import io
 from fastapi.testclient import TestClient
 from backend.app import app
 from backend import docs_repo, session

@@ -14,11 +14,14 @@ def publish(slug: str, title: str, tags: list[str], project: str | None,
         row = c.execute("SELECT id, latest_version FROM docs WHERE slug=%s",
                         (slug,)).fetchone()
         if row is None:
-            doc_id = c.execute(
+            inserted = c.execute(
                 "INSERT INTO docs (slug, title, tags, project, latest_version) "
                 "VALUES (%s,%s,%s,%s,0) RETURNING id",
                 (slug, title, tags, project),
-            ).fetchone()[0]
+            ).fetchone()
+            if inserted is None:
+                raise RuntimeError("INSERT ... RETURNING id yielded no row")
+            doc_id = inserted[0]
             version = 1
         else:
             doc_id, latest = row

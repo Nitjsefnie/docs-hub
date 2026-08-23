@@ -1,8 +1,22 @@
-import os, subprocess, sys, threading, time
+import os
+import subprocess
+import sys
+import threading
+import time
 from pathlib import Path
+
+import pytest
 import uvicorn
 
 CLI = Path.home() / ".agent-bundle" / "scripts" / "docs_hub.py"
+
+# The agent-facing CLI is deliberately NOT in this repo (it ships with the
+# fleet setup bundle, see AGENTS.md), so this end-to-end test can only run
+# on a machine that has the bundle installed. Skipping beats a red CI job
+# for a file the repository does not own -- and beats deleting the only
+# test that exercises a real client against a real server.
+pytestmark = pytest.mark.skipif(
+    not CLI.exists(), reason=f"docs_hub.py CLI not installed at {CLI}")
 
 _SERVER = None
 
@@ -34,17 +48,17 @@ def test_cli_publish_get_list(tmp_path):
     pub = subprocess.run(
         [sys.executable, str(CLI), "publish", str(doc), "--slug", "cli/demo",
          "--title", "CLI Demo", "--from", "analyst"],
-        capture_output=True, text=True, env=env)
+        capture_output=True, text=True, env=env, check=False)
     assert pub.returncode == 0, pub.stderr
     assert "cli/demo" in pub.stdout
     out = tmp_path / "got.html"
     get = subprocess.run(
         [sys.executable, str(CLI), "get", "cli/demo", "-o", str(out)],
-        capture_output=True, text=True, env=env)
+        capture_output=True, text=True, env=env, check=False)
     assert get.returncode == 0, get.stderr
     assert out.read_text(encoding="utf-8") == "<h1>cli</h1>"
     lst = subprocess.run([sys.executable, str(CLI), "list"],
-                         capture_output=True, text=True, env=env)
+                         capture_output=True, text=True, env=env, check=False)
     assert "cli/demo" in lst.stdout
 
 
@@ -60,7 +74,7 @@ def test_cli_tags(tmp_path):
              "--title", slug, "--tags", tags, "--from", "analyst"],
             capture_output=True, text=True, env=env, check=True)
     out = subprocess.run([sys.executable, str(CLI), "tags"],
-                         capture_output=True, text=True, env=env)
+                         capture_output=True, text=True, env=env, check=False)
     assert out.returncode == 0, out.stderr
     # "<count>  <tag>" lines, most-used first
     lines = [ln.strip() for ln in out.stdout.strip().splitlines()]

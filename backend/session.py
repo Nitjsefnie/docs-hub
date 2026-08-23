@@ -14,7 +14,7 @@ import secrets
 import time
 
 from starlette.requests import Request
-from starlette.responses import JSONResponse, RedirectResponse, Response
+from starlette.responses import JSONResponse, RedirectResponse
 
 from backend import docs_repo
 

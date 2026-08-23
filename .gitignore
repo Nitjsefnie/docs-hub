@@ -18,15 +18,29 @@
 !README.md
 !pyproject.toml
 !requirements.txt
+!requirements-dev.txt
+!requirements-test.txt
 
-# --- GitHub templates -------------------------------------------------
+# --- CI tooling config ------------------------------------------------
+!setup.cfg
+!.pylintrc
+!pyrightconfig.json
+!eslint.config.mjs
+!package.json
+!package-lock.json
+
+# --- GitHub: templates, workflows, dependabot --------------------------
 !.github/
 .github/*
 !.github/PULL_REQUEST_TEMPLATE.md
+!.github/dependabot.yml
 !.github/ISSUE_TEMPLATE/
 .github/ISSUE_TEMPLATE/*
 !.github/ISSUE_TEMPLATE/*.md
 !.github/ISSUE_TEMPLATE/*.yml
+!.github/workflows/
+.github/workflows/*
+!.github/workflows/*.yml
 
 # --- application ------------------------------------------------------
 !backend/
@@ -67,6 +81,9 @@ docs/superpowers/plans/*
 docs/superpowers/specs/*
 !docs/superpowers/specs/*.md
 !docs/superpowers/specs/*.html
+
+# --- npm: lint tooling only, never served ------------------------------
+# `*` already denies node_modules/, and nothing below names it back.
 
 # --- runtime blob store: the directory ships, its contents never do ----
 !store/

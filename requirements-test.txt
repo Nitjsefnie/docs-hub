@@ -1,0 +1,7 @@
+# Test-only toolchain, pinned for the same reason as requirements-dev.txt.
+#
+# pytest and httpx are NOT here: they are in requirements.txt, which is what
+# a developer installs to run the suite (see CONTRIBUTING.md). `coverage` is
+# only ever needed by the coverage job in .github/workflows/tests.yml, which
+# calls `coverage report --format=markdown` and `--fail-under` directly.
+coverage==7.15.4
