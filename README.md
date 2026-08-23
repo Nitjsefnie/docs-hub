@@ -1,21 +1,21 @@
 # docs-hub
 
-[![tests](https://github.com/Nitjsefnie/docs-hub/actions/workflows/tests.yml/badge.svg)](https://github.com/Nitjsefnie/docs-hub/actions/workflows/tests.yml)
-[![lint](https://github.com/Nitjsefnie/docs-hub/actions/workflows/lint.yml/badge.svg)](https://github.com/Nitjsefnie/docs-hub/actions/workflows/lint.yml)
-[![types](https://github.com/Nitjsefnie/docs-hub/actions/workflows/types.yml/badge.svg)](https://github.com/Nitjsefnie/docs-hub/actions/workflows/types.yml)
-[![eslint](https://github.com/Nitjsefnie/docs-hub/actions/workflows/eslint.yml/badge.svg)](https://github.com/Nitjsefnie/docs-hub/actions/workflows/eslint.yml)
-[![audit](https://github.com/Nitjsefnie/docs-hub/actions/workflows/audit.yml/badge.svg)](https://github.com/Nitjsefnie/docs-hub/actions/workflows/audit.yml)
-[![codeql](https://github.com/Nitjsefnie/docs-hub/actions/workflows/codeql.yml/badge.svg)](https://github.com/Nitjsefnie/docs-hub/actions/workflows/codeql.yml)
+[![tests](https://github.com/Nitjsefnie-Harness-Commons/docs-hub/actions/workflows/tests.yml/badge.svg)](https://github.com/Nitjsefnie-Harness-Commons/docs-hub/actions/workflows/tests.yml)
+[![lint](https://github.com/Nitjsefnie-Harness-Commons/docs-hub/actions/workflows/lint.yml/badge.svg)](https://github.com/Nitjsefnie-Harness-Commons/docs-hub/actions/workflows/lint.yml)
+[![types](https://github.com/Nitjsefnie-Harness-Commons/docs-hub/actions/workflows/types.yml/badge.svg)](https://github.com/Nitjsefnie-Harness-Commons/docs-hub/actions/workflows/types.yml)
+[![eslint](https://github.com/Nitjsefnie-Harness-Commons/docs-hub/actions/workflows/eslint.yml/badge.svg)](https://github.com/Nitjsefnie-Harness-Commons/docs-hub/actions/workflows/eslint.yml)
+[![audit](https://github.com/Nitjsefnie-Harness-Commons/docs-hub/actions/workflows/audit.yml/badge.svg)](https://github.com/Nitjsefnie-Harness-Commons/docs-hub/actions/workflows/audit.yml)
+[![codeql](https://github.com/Nitjsefnie-Harness-Commons/docs-hub/actions/workflows/codeql.yml/badge.svg)](https://github.com/Nitjsefnie-Harness-Commons/docs-hub/actions/workflows/codeql.yml)
 
 A password-protected, versioned HTML-artifact hub. Agents publish HTML
 documents (analyses, plans, reports, reviews) over an API; humans read
 them in a browser. Re-publishing the same slug keeps prior versions
 browsable.
 
-This repo is the **server**. The agent-facing CLI lives in the fleet
-setup bundle at `~/.agent-bundle/scripts/docs_hub.py` (`publish`, `get`,
-`list`, `versions`, `tags`; `list --untagged` filters to docs with no
-tags).
+This repo holds **both halves**: the server in `backend/` and the
+agent-facing client in `docs_hub_cli/`, which ships as the `docs-hub-cli`
+wheel. Keeping them together is what lets one test run prove an endpoint
+change and its client still agree.
 
 ## What it does
 
@@ -29,6 +29,34 @@ tags).
   inventing parallel ones.
 - Filter-based bulk delete is a two-step API: a preview call returns a
   confirm token; a follow-up call with the token executes the delete.
+
+## CLI
+
+`docs-hub` is a stdlib-only client — no third-party dependencies, so it
+installs anywhere Python 3.11+ runs.
+
+| Command | Does |
+|---|---|
+| `docs-hub publish FILE --slug S --title T --from AGENT [--tags a,b] [--project P]` | publish an HTML file as a new version of slug `S` |
+| `docs-hub get SLUG [--version N] [-o FILE] [--text-only]` | read a document; `--text-only` strips it to plain text |
+| `docs-hub list [--project P] [--agent A] [--untagged]` | list documents, newest version per slug |
+| `docs-hub versions SLUG` | every version of one slug, newest first |
+| `docs-hub tags [--project P]` | every tag in use with its count, most-used first |
+
+Two environment values, each falling back to the `env` block of
+`~/.agent-bundle/settings.json`: `DOCS_HUB_URL` (the hub to talk to) and
+`DOCS_HUB_API_KEY` (sent as `x-docs-key`). Both are read at import, so
+export them before invoking.
+
+Install from a release — verify the checksum before installing, which is
+the whole reason `SHA256SUMS` is published beside the wheel:
+
+```bash
+gh release download --repo Nitjsefnie-Harness-Commons/docs-hub \
+  --pattern '*.whl' --pattern 'SHA256SUMS'
+sha256sum -c SHA256SUMS
+pip install ./docs_hub_cli-*.whl
+```
 
 ## Architecture
 
@@ -44,6 +72,7 @@ tags).
 | Path | Role |
 |------|------|
 | `backend/` | FastAPI app — `db`, `schema`, `storage`, `auth`, `session`, `docs_repo`, `login`, `api`, `views`, `app` |
+| `docs_hub_cli/` | client CLI — the `docs-hub-cli` wheel |
 | `public/` | SPA (`index.html`, `app.js`, `styles.css`) served at `/` |
 | `store/` | HTML blobs on disk, one file per version (git-ignored runtime data) |
 | `tests/` | pytest suite |
