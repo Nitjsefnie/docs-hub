@@ -48,6 +48,14 @@ backend/*
 !backend/*.py
 !backend/*.sql
 
+# The client CLI, shipped as the docs-hub-cli wheel. Named back explicitly for
+# the same reason as backend/: without it `git add docs_hub_cli/` is refused,
+# lint runs `git ls-files '*.py'` over a tree the package is invisible in, and
+# the wheel would be built from a directory the repository does not track.
+!docs_hub_cli/
+docs_hub_cli/*
+!docs_hub_cli/*.py
+
 !public/
 public/*
 !public/*.html

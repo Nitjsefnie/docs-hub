@@ -1,3 +1,45 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "docs-hub-cli"
+dynamic = ["version"]
+description = "Client CLI for docs.nitjsefni.eu — publish HTML artifacts and read them back"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "Nitjsefnie" }]
+keywords = ["docs", "publishing", "cli", "agents"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Topic :: Documentation",
+]
+# Stdlib only, deliberately: the CLI runs from sessions, cron jobs and bare
+# shells on machines that install nothing else, so urllib is the transport.
+# The SERVER's dependencies live in requirements.txt and are not shipped here:
+# nobody installing the client should be made to install a web framework.
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/Nitjsefnie-Harness-Commons/docs-hub"
+Issues = "https://github.com/Nitjsefnie-Harness-Commons/docs-hub/issues"
+
+[project.scripts]
+docs-hub = "docs_hub_cli.cli:main"
+
+[tool.setuptools]
+# Explicit, not auto-discovered: this repository also holds `backend`, `tests`
+# and `store`, and auto-discovery would put the server — and its schema and
+# credentials handling — inside a wheel whose whole point is to be the client.
+packages = ["docs_hub_cli"]
+
+[tool.setuptools.dynamic]
+# Single source of truth: the wheel and the package can never disagree.
+version = { attr = "docs_hub_cli.__version__" }
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
